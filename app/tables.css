@@ -1,0 +1,36 @@
+/* Shared table presentation. Existing column sizes and palette are retained. */
+.table-wrap{border-radius:12px;border:1px solid rgba(113,128,153,.09);box-shadow:0 2px 9px rgba(33,66,110,.025);transition:box-shadow 200ms ease;overflow-x:auto;scroll-behavior:smooth;overscroll-behavior-x:contain}
+.table-wrap:focus-visible{outline:2px solid #5ea2f2;outline-offset:2px}
+table th{font-weight:600;transition:background-color 180ms ease;color:#62738e}
+table tbody td{transition:background-color 180ms ease}
+@media(hover:hover){table tbody tr:not(.table-skeleton):not(.row-exit):hover>td{background-color:#f2f8ff}}
+table tbody tr:focus-within>td{background-color:#f2f8ff}
+table tr[aria-selected=true]>td,table tr[data-selected=true]>td{background-color:#eaf4ff}
+table tr[aria-selected=true]>td:first-child,table tr[data-selected=true]>td:first-child{box-shadow:inset 3px 0 #1473e6}
+.row-enter{animation:table-row-in 240ms ease-out backwards}
+.row-created>td{animation:table-created 1400ms ease-out both}
+.row-updated>td{animation:table-updated 900ms ease-out both}
+.row-exit{animation:table-row-out 220ms ease-in both;pointer-events:none}
+@keyframes table-row-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+@keyframes table-row-out{to{opacity:0;transform:scale(.985)}}
+@keyframes table-created{0%,20%{background-color:#eafbf4}100%{background-color:transparent}}
+@keyframes table-updated{0%,20%{background-color:#eaf4ff}100%{background-color:transparent}}
+.table-action{position:relative;display:inline-flex}
+.table-action button svg{transition:transform 180ms ease}
+.table-action button:hover svg,.table-action button:focus-visible svg{transform:scale(1.05)}
+.app-shell .table-action button:active:not(:disabled){transform:scale(.95)}
+.table-tooltip{position:absolute;bottom:calc(100% + 5px);right:0;z-index:5;pointer-events:none;opacity:0;transform:translateY(3px);transition:opacity 160ms ease,transform 160ms ease;background:#11284b;color:#fff;padding:5px 8px;border-radius:7px;font-size:10px;font-weight:500;white-space:nowrap;box-shadow:0 3px 8px rgba(17,40,75,.08)}
+.table-action:not(.tooltip-dismissed):hover .table-tooltip,.table-action:not(.tooltip-dismissed):focus-within .table-tooltip{opacity:1;transform:none}
+.table-sort{display:inline-flex;align-items:center;gap:7px;border:0;border-radius:5px;background:transparent;color:inherit;font:inherit;cursor:pointer;padding:4px}
+.table-sort:hover{background:#eaf4ff}.table-sort span{display:inline-block;transition:transform 180ms ease;opacity:.7}.table-sort .sort-desc{transform:rotate(180deg)}
+.table-pagination{display:flex;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:5px;padding:12px}
+.table-pagination button{border:1px solid #dfe7f1;border-radius:8px;background:#fff;color:#53617d;padding:6px 10px;cursor:pointer;transition:background-color 180ms ease,box-shadow 180ms ease,transform 180ms ease}
+.table-pagination button[aria-current=page]{background:#1473e6;color:#fff;border-color:#1473e6;box-shadow:0 2px 6px rgba(20,115,230,.12)}
+.table-pagination button:disabled{opacity:.45;cursor:default}
+.table-page-enter{animation:table-page-in 180ms ease-out}
+@keyframes table-page-in{from{opacity:.45}to{opacity:1}}
+.skeleton-line{display:block;height:11px;width:85%;min-width:38px;border-radius:4px;background:linear-gradient(100deg,#eff4f9 25%,#f8fbfe 45%,#eff4f9 65%);background-size:220% 100%;animation:table-shimmer 1700ms linear infinite}
+.skeleton-line.short{width:55%;height:8px;margin-top:7px}
+@keyframes table-shimmer{from{background-position:100% 0}to{background-position:-100% 0}}
+@media(max-width:760px){.fluid-table .row-actions{gap:5px}.fluid-table .table-action button{min-height:36px;min-width:32px}}
+@media(prefers-reduced-motion:reduce){.table-wrap{scroll-behavior:auto}table *, .table-pagination *, .table-tooltip{animation:none!important;transition:none!important}.table-action button:hover svg,.table-action button:focus-visible svg,.app-shell .table-action button:active:not(:disabled){transform:none}.table-page-enter{animation:none}.row-created>td{background:#eafbf4}.row-updated>td{background:#eaf4ff}}

@@ -1,181 +1,1372 @@
 'use client';
-
 import { useMemo, useState } from 'react';
-import {
-  Bell, Boxes, Building2, Check, ChevronDown, CircleDollarSign, ClipboardList,
-  Download, Edit3, Eye, FileBarChart, Filter, LayoutDashboard, Menu, PackageCheck,
-  Plus, RefreshCw, Search, Settings, ShoppingCart, Trash2, TrendingDown, TrendingUp,
-  Truck, UserCog, Users, X,
-} from 'lucide-react';
+import { Bell, Boxes, Building2, Check, ChevronDown, CircleDollarSign, ClipboardList, Download, Edit3, Eye, FileBarChart, Filter, LayoutDashboard, Menu, PackageCheck, Plus, RefreshCw, Search, Settings, ShoppingCart, Trash2, TrendingDown, TrendingUp, Truck, UserCog, Users, X, ReceiptText, } from 'lucide-react';
 import { TableRow, TableAction, TableSkeleton, TableEmpty } from '@/components/table-effects';
+import { BillingProvider, BillingView, useBilling } from '@/components/billing';
+import { supplierDisplayId, clientDisplayId } from '@/lib/party-codes';
+import { Certificates } from '@/components/certificates';
+import { WeightTickets } from '@/components/weight-tickets';
 import { Button } from '@/components/ui/button';
 import { AnimatedValue, RefreshButton, NotificationBell, MobileDrawer } from '@/components/motion';
-import {
-  EconexoDataProvider, useEconexoData, type CategoryRecord, type ClientRecord,
-  type InventoryRecord, type MaterialRecord, type SupplierRecord,
-} from '@/lib/econexo-data';
-
-type View = 'dashboard'|'inventarios'|'inventario-form'|'abastecimiento'|'clientes'|'reportes'|'configuracion';
-type Notice = {message:string;tone?:'success'|'error'};
+import { EconexoDataProvider, useEconexoData, type CategoryRecord, type ClientRecord, type InventoryRecord, type MaterialRecord, type SupplierRecord, } from '@/lib/econexo-data';
+type View = 'certificados' | 'dashboard' | 'inventarios' | 'inventario-form' | 'facturacion' | 'abastecimiento' | 'clientes' | 'reportes' | 'configuracion';
+type Notice = {
+    message: string;
+    tone?: 'success' | 'error';
+};
 const navItems = [
-  {id:'dashboard',label:'Dashboard',icon:LayoutDashboard,admin:true},
-  {id:'inventarios',label:'Inventarios',icon:Boxes,admin:false},
-  {id:'abastecimiento',label:'Cadena de abastecimiento',icon:Truck,admin:false},
-  {id:'clientes',label:'Clientes',icon:Users,admin:false},
-  {id:'reportes',label:'Reportes',icon:FileBarChart,admin:true},
-  {id:'configuracion',label:'Configuración',icon:Settings,admin:true},
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, admin: true },
+    { id: 'inventarios', label: 'Inventarios', icon: Boxes, admin: false },
+    { id: 'facturacion', label: 'Boleta de peso', icon: ReceiptText, admin: true },
+    { id: 'abastecimiento', label: 'Cadena de abastecimiento', icon: Truck, admin: false },
+    { id: 'clientes', label: 'Clientes', icon: Users, admin: false },
+    { id: 'certificados', label: 'Certificados', icon: ClipboardList, admin: true },
+    { id: 'reportes', label: 'Reportes', icon: FileBarChart, admin: true },
+    { id: 'configuracion', label: 'Configuración', icon: Settings, admin: true },
 ] as const;
-
-const formatDate=(value?:string)=>value?new Intl.DateTimeFormat('es-HN',{day:'2-digit',month:'short',year:'numeric'}).format(new Date(`${value}T12:00:00`)):'—';
-const number=(value:number,digits=2)=>new Intl.NumberFormat('es-HN',{maximumFractionDigits:digits}).format(value);
-const money=(value:number|null|undefined,currency:'LPS'|'USD'='LPS')=>value==null?'—':new Intl.NumberFormat('es-HN',{style:'currency',currency,maximumFractionDigits:2}).format(value);
-const providerType=(type:string)=>type==='company'?'Empresa':'Recolector';
-const clientType=(type:string)=>type==='company'?'Empresa':'Persona';
-const stockStatus=(status:string)=>status==='in_transit'?'En tránsito':status==='reserved'?'Reservado':'Disponible';
-const initials=(name:string)=>name.split(' ').filter(Boolean).map(x=>x[0]).slice(0,2).join('').toUpperCase();
-const asNumber=(value:unknown)=>Number(value??0);
-const toCurrency=(amount:number,source:'LPS'|'USD',target:'LPS'|'USD',rate:number)=>source===target?amount:source==='USD'?amount*rate:amount/rate;
-
-function StatusBadge({children}:{children:React.ReactNode}){const label=String(children);const tone=label.includes('Disponible')||label.includes('Activo')?'success':label.includes('tránsito')?'info':'warning';return <span className={`status ${tone}`}><i/>{children}</span>}
-function PageTitle({eyebrow,title,subtitle,action}:{eyebrow:string;title:string;subtitle:string;action?:React.ReactNode}){const editorial=['Dashboard','Inventarios','Cadena de abastecimiento','Clientes','Reportes','Configuración'].includes(title);return <div className={`page-title ${title==='Inventarios'?'inventory-title ':''}${editorial?'editorial-title':''}`}><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{subtitle}</p></div>{action}</div>}
-function Modal({title,subtitle='Completa o revisa la información.',children,onClose}:{title:string;subtitle?:string;children:React.ReactNode;onClose:()=>void}){return <div className="modal-layer" role="dialog" aria-modal="true"><div className="modal"><div className="modal-head"><div><h2>{title}</h2><p>{subtitle}</p></div><Button variant="ghost" size="icon" onClick={onClose} aria-label="Cerrar"><X/></Button></div>{children}</div></div>}
-function EmptyState({message}:{message:string}){return <div className="empty-state"><Search/><strong>Sin resultados</strong><span>{message}</span></div>}
-function FieldError({children}:{children?:string}){return children?<small className="field-error">{children}</small>:null}
-
-function AccessGate({children}:{children:React.ReactNode}){
-  const{ready,user,loading,error,signIn}=useEconexoData();
-  const[email,setEmail]=useState('');const[password,setPassword]=useState('');const[localError,setLocalError]=useState('');
-  if(!ready)return <main className="setup-screen"><div className="setup-card"><div className="loader"/><p>Comprobando sesión…</p></div></main>;
-  if(!user)return <main className="setup-screen"><form className="setup-card login-card" onSubmit={async e=>{e.preventDefault();setLocalError('');try{await signIn(email,password)}catch(err){setLocalError(err instanceof Error?err.message:'No fue posible iniciar sesión')}}}><span className="brand-mark">E</span><p className="eyebrow">ECONEXO RECICLAJES</p><h1>Iniciar sesión</h1><p>Usa un usuario creado en Supabase Authentication.</p><label>Correo electrónico<input type="email" required value={email} onChange={e=>setEmail(e.target.value)}/></label><label>Contraseña<input type="password" required minLength={6} value={password} onChange={e=>setPassword(e.target.value)}/></label>{(localError||error)&&<div className="form-error">{localError||error}</div>}<Button size="lg" type="submit" disabled={loading}>{loading?'Ingresando…':'Ingresar al sistema'}</Button></form></main>;
-  return <>{children}</>;
+const formatDate = (value?: string) => value ? new Intl.DateTimeFormat('es-HN', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(`${value}T12:00:00`)) : '—';
+const number = (value: number, digits = 2) => new Intl.NumberFormat('es-HN', { maximumFractionDigits: digits }).format(value);
+const money = (value: number | null | undefined, currency: 'LPS' | 'USD' = 'LPS') => value == null ? '—' : new Intl.NumberFormat('es-HN', { style: 'currency', currency, maximumFractionDigits: 2 }).format(value);
+const providerType = (type: string) => type === 'company' ? 'Empresa' : 'Recolector';
+const clientType = (type: string) => type === 'company' ? 'Empresa' : 'Persona';
+const stockStatus = (status: string) => status === 'in_transit' ? 'En tránsito' : status === 'reserved' ? 'Reservado' : 'Disponible';
+const initials = (name: string) => name.split(' ').filter(Boolean).map(x => x[0]).slice(0, 2).join('').toUpperCase();
+const asNumber = (value: unknown) => Number(value ?? 0);
+const toCurrency = (amount: number, source: 'LPS' | 'USD', target: 'LPS' | 'USD', rate: number) => source === target ? amount : source === 'USD' ? amount * rate : amount / rate;
+function StatusBadge({ children }: {
+    children: React.ReactNode;
+}) { const label = String(children); const tone = label.includes('Disponible') || label.includes('Activo') ? 'success' : label.includes('tránsito') ? 'info' : 'warning'; return <span className={`status ${tone}`}>
+<i />{children}</span>; }
+function PageTitle({ eyebrow, title, subtitle, action }: {
+    eyebrow: string;
+    title: string;
+    subtitle: string;
+    action?: React.ReactNode;
+}) { const editorial = ['Dashboard', 'Inventarios', 'Cadena de abastecimiento', 'Clientes', 'Reportes', 'Configuración'].includes(title); return <div className={`page-title ${title === 'Inventarios' ? 'inventory-title ' : ''}${editorial ? 'editorial-title' : ''}`}>
+<div>
+<p className="eyebrow">{eyebrow}</p>
+<h1>{title}</h1>
+<p>{subtitle}</p>
+</div>{action}</div>; }
+function Modal({ title, subtitle = 'Completa o revisa la información.', children, onClose }: {
+    title: string;
+    subtitle?: string;
+    children: React.ReactNode;
+    onClose: () => void;
+}) { return <div className="modal-layer" role="dialog" aria-modal="true">
+<div className="modal">
+<div className="modal-head">
+<div>
+<h2>{title}</h2>
+<p>{subtitle}</p>
+</div>
+<Button variant="ghost" size="icon" onClick={onClose} aria-label="Cerrar">
+<X />
+</Button>
+</div>{children}</div>
+</div>; }
+function EmptyState({ message }: {
+    message: string;
+}) { return <div className="empty-state">
+<Search />
+<strong>Sin resultados</strong>
+<span>{message}</span>
+</div>; }
+function FieldError({ children }: {
+    children?: string;
+}) { return children ? <small className="field-error">{children}</small> : null; }
+function AccessGate({ children }: {
+    children: React.ReactNode;
+}) {
+    const { ready, user, loading, error, signIn } = useEconexoData();
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [localError, setLocalError] = useState('');
+    if (!ready)
+        return <main className="setup-screen">
+<div className="setup-card">
+<div className="loader"/>
+<p>Comprobando sesión…</p>
+</div>
+</main>;
+    if (!user)
+        return <main className="setup-screen">
+<form className="setup-card login-card" onSubmit={async (e) => { e.preventDefault(); setLocalError(''); try {
+            await signIn(email, password);
+        }
+        catch (err) {
+            setLocalError(err instanceof Error ? err.message : 'No fue posible iniciar sesión');
+        } }}>
+<span className="brand-mark">E</span>
+<p className="eyebrow">GAVRION ECOSYSTEMS</p>
+<h1>Iniciar sesión</h1>
+<p>Usa un usuario creado en Supabase Authentication.</p>
+<label>Correo electrónico<input type="email" required value={email} onChange={e => setEmail(e.target.value)}/>
+</label>
+<label>Contraseña<input type="password" required minLength={6} value={password} onChange={e => setPassword(e.target.value)}/>
+</label>{(localError || error) && <div className="form-error">{localError || error}</div>}<Button size="lg" type="submit" disabled={loading}>{loading ? 'Ingresando…' : 'Ingresar al sistema'}</Button>
+</form>
+</main>;
+    return <>{children}</>;
 }
-
-function Dashboard(){
-  const{inventory,suppliers,clients,settings}=useEconexoData();const[period,setPeriod]=useState('Mensual');const[unit,setUnit]=useState<'lb'|'ton'>('lb');const[currency,setCurrency]=useState<'LPS'|'USD'>(settings?.default_currency??'LPS');
-  const rate=settings?.usd_to_lps_rate??24.75;const totalTons=inventory.reduce((sum,row)=>sum+asNumber(row.tons),0);
-  const totals=inventory.reduce((acc,row)=>{const source=row.currency??'LPS';acc.cost+=toCurrency(asNumber(row.cost_total),source,currency,rate);acc.sale+=toCurrency(asNumber(row.estimated_sale),source,currency,rate);return acc},{cost:0,sale:0});
-  const status=(key:string)=>inventory.filter(x=>x.status===key).reduce((sum,x)=>sum+asNumber(x.tons),0);
-  const monthValues=useMemo(()=>Array.from({length:12},(_,i)=>{const rows=inventory.filter(x=>new Date(`${x.received_at}T12:00:00`).getMonth()===i);const weight=rows.reduce((s,x)=>s+(unit==='lb'?asNumber(x.pounds):asNumber(x.tons)),0);return{month:['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][i],value:weight}}),[inventory,unit]);
-  const max=Math.max(...monthValues.map(x=>x.value),1);const kpis=[
-    ['Stock actual',number(totalTons),'ton','Datos actuales',Boxes,'mint'],['Compras del período',money(totals.cost,currency),period,'Desde inventario',ShoppingCart,'blue'],
-    ['Ventas estimadas',money(totals.sale,currency),period,'Proyección',TrendingUp,'violet'],['Ingresos',money(totals.sale,currency),period,'Estimados',CircleDollarSign,'cyan'],
-    ['Costos',money(totals.cost,currency),period,'Registrados',TrendingDown,'rose'],['Ganancia estimada',money(totals.sale-totals.cost,currency),'Margen proyectado','Calculada',TrendingUp,'amber'],
-    ['Proveedores activos',String(suppliers.filter(x=>x.active).length),'registrados','Base de datos',Truck,'sky'],['Clientes activos',String(clients.filter(x=>x.active).length),'registrados','Base de datos',Users,'pink'],
-  ] as const;
-  return <><PageTitle eyebrow="RESUMEN GENERAL" title="Dashboard" subtitle="Información consolidada directamente desde Supabase." action={<div className="periods">{['Diario','Semanal','Mensual','Trimestral','Semestral','Anual'].map(p=><button key={p} className={period===p?'selected':''} onClick={()=>setPeriod(p)}>{p}</button>)}</div>}/><section className="kpi-grid">{kpis.map(([label,value,small,change,Icon,tone])=><article className={`kpi-card ${tone}`} key={label}><div className="kpi-top"><span className="icon-box"><Icon size={20}/></span><span className="trend">{change}</span></div><p>{label}</p><AnimatedValue value={value}/><small>{small}</small></article>)}</section><section className="dashboard-grid"><article className="panel movement-panel"><div className="panel-head"><div><span className="section-icon"><TrendingUp size={20}/></span><h2>Movimientos de inventario</h2><p>Ingresos agrupados por mes</p></div><div className="unit-switch"><button className={unit==='lb'?'selected':''} onClick={()=>setUnit('lb')}>lb</button><button className={unit==='ton'?'selected':''} onClick={()=>setUnit('ton')}>ton</button></div></div><div className="legend"><span><i className="dot blue-dot"/>Entradas</span><span><i className="dot green-dot"/>Disponible</span></div><div className="chart">{monthValues.map(item=><div className="bar-group" key={item.month}><div className="bars"><i className="bar buy" title={`${number(item.value)} ${unit}`} style={{height:`${Math.max(item.value/max*92,item.value?5:1)}%`}}/></div><span>{item.month}</span></div>)}</div><p className="chart-note">Valores expresados en {unit==='lb'?'libras':'toneladas'}</p></article><div className="side-stack"><article className="panel stock-panel"><div className="panel-head"><div><span className="section-icon green"><PackageCheck size={20}/></span><h2>Estado de stock</h2><p>Distribución actual</p></div></div><div className="donut"><div><strong>{number(totalTons)}</strong><span>toneladas</span></div></div><ul className="stock-list"><li><span><i className="dot green-dot"/>Disponible</span><strong>{number(status('available'))} ton</strong></li><li><span><i className="dot blue-dot"/>En tránsito</span><strong>{number(status('in_transit'))} ton</strong></li><li><span><i className="dot gray-dot"/>Reservado</span><strong>{number(status('reserved'))} ton</strong></li></ul></article><article className="panel finance"><div className="panel-head"><div><span className="section-icon violet"><CircleDollarSign size={20}/></span><h2>Resumen financiero</h2><p>Tasa: 1 USD = {number(rate)} LPS</p></div><select value={currency} onChange={e=>setCurrency(e.target.value as 'LPS'|'USD')}><option>LPS</option><option>USD</option></select></div><dl><div><dt>Total invertido</dt><dd>{money(totals.cost,currency)}</dd></div><div><dt>Venta estimada</dt><dd>{money(totals.sale,currency)}</dd></div><div className="profit"><dt>Ganancia estimada</dt><dd>{money(totals.sale-totals.cost,currency)}</dd></div></dl></article></div></section><section className="recent-section"><div className="section-title"><div><ClipboardList/><div><h2>Actividades recientes</h2><p>Últimos ingresos registrados</p></div></div></div><div className="activity-grid"><article className="panel compact"><h3>Inventarios recientes</h3>{inventory.slice(0,4).map(row=><div className="activity-row" key={row.id}><span className="mini-avatar">{initials(row.material)}</span><div><strong>{row.material} · {row.category}</strong><small>Ingreso de {number(row.quantity)} {row.unit}</small></div><time>{formatDate(row.received_at)}</time></div>)}{!inventory.length&&<EmptyState message="Aún no hay inventario."/>}</article><article className="panel compact"><h3>Cadena de abastecimiento</h3>{inventory.slice(0,4).map(row=><div className="activity-row" key={row.id}><span className="mini-avatar greenish">{initials(row.supplier)}</span><div><strong>{row.supplier}</strong><small>{providerType(row.supplier_type)} · {row.material}</small></div><time>{formatDate(row.received_at)}</time></div>)}{!inventory.length&&<EmptyState message="Aún no hay entregas."/>}</article></div></section></>;
+function Dashboard() {
+    const { inventory, suppliers, clients, settings } = useEconexoData();
+    const { invoices } = useBilling();
+    const [period, setPeriod] = useState('Mensual');
+    const [unit, setUnit] = useState<'lb' | 'ton'>('lb');
+    const [currency, setCurrency] = useState<'LPS' | 'USD'>(settings?.default_currency ?? 'LPS');
+    const rate = settings?.usd_to_lps_rate ?? 24.75;
+    const totalTons = inventory.reduce((sum, row) => sum + asNumber(row.tons), 0);
+    const totals = inventory.reduce((acc, row) => { const source = row.currency ?? 'LPS'; acc.cost += toCurrency(asNumber(row.cost_total), source, currency, rate); acc.sale += toCurrency(asNumber(row.estimated_sale), source, currency, rate); return acc; }, { cost: 0, sale: 0 });
+    const billed = invoices.filter(row => row.status !== 'void').reduce((sum, row) => sum + toCurrency(row.total, row.currency, currency, rate), 0);
+    const status = (key: string) => inventory.filter(x => x.status === key).reduce((sum, x) => sum + asNumber(x.tons), 0);
+    const monthValues = useMemo(() => Array.from({ length: 12 }, (_, i) => { const rows = inventory.filter(x => new Date(`${x.received_at}T12:00:00`).getMonth() === i); const weight = rows.reduce((s, x) => s + (unit === 'lb' ? asNumber(x.pounds) : asNumber(x.tons)), 0); return { month: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'][i], value: weight }; }), [inventory, unit]);
+    const max = Math.max(...monthValues.map(x => x.value), 1);
+    const kpis = [
+        ['Stock actual', number(totalTons), 'ton', 'Datos actuales', Boxes, 'mint'], ['Compras del período', money(totals.cost, currency), period, 'Desde inventario', ShoppingCart, 'blue'],
+        ['Ventas facturadas', money(billed, currency), period, 'Facturación', TrendingUp, 'violet'], ['Ingresos', money(billed, currency), period, 'Facturados', CircleDollarSign, 'cyan'],
+        ['Costos', money(totals.cost, currency), period, 'Registrados', TrendingDown, 'rose'], ['Ganancia estimada', money(totals.sale - totals.cost, currency), 'Margen proyectado', 'Calculada', TrendingUp, 'amber'],
+        ['Proveedores activos', String(suppliers.filter(x => x.active).length), 'registrados', 'Base de datos', Truck, 'sky'], ['Clientes activos', String(clients.filter(x => x.active).length), 'registrados', 'Base de datos', Users, 'pink'],
+    ] as const;
+    return <>
+<PageTitle eyebrow="RESUMEN GENERAL" title="Dashboard" subtitle="Información consolidada directamente desde Supabase." action={<div className="periods">{['Diario', 'Semanal', 'Mensual', 'Trimestral', 'Semestral', 'Anual'].map(p => <button key={p} className={period === p ? 'selected' : ''} onClick={() => setPeriod(p)}>{p}</button>)}</div>}/>
+<section className="kpi-grid">{kpis.map(([label, value, small, change, Icon, tone]) => <article className={`kpi-card ${tone}`} key={label}>
+<div className="kpi-top">
+<span className="icon-box">
+<Icon size={20}/>
+</span>
+<span className="trend">{change}</span>
+</div>
+<p>{label}</p>
+<AnimatedValue value={value}/>
+<small>{small}</small>
+</article>)}</section>
+<section className="dashboard-grid">
+<article className="panel movement-panel">
+<div className="panel-head">
+<div>
+<span className="section-icon">
+<TrendingUp size={20}/>
+</span>
+<h2>Movimientos de inventario</h2>
+<p>Ingresos agrupados por mes</p>
+</div>
+<div className="unit-switch">
+<button className={unit === 'lb' ? 'selected' : ''} onClick={() => setUnit('lb')}>lb</button>
+<button className={unit === 'ton' ? 'selected' : ''} onClick={() => setUnit('ton')}>ton</button>
+</div>
+</div>
+<div className="legend">
+<span>
+<i className="dot blue-dot"/>Entradas</span>
+<span>
+<i className="dot green-dot"/>Disponible</span>
+</div>
+<div className="chart">{monthValues.map(item => <div className="bar-group" key={item.month}>
+<div className="bars">
+<i className="bar buy" title={`${number(item.value)} ${unit}`} style={{ height: `${Math.max(item.value / max * 92, item.value ? 5 : 1)}%` }}/>
+</div>
+<span>{item.month}</span>
+</div>)}</div>
+<p className="chart-note">Valores expresados en {unit === 'lb' ? 'libras' : 'toneladas'}</p>
+</article>
+<div className="side-stack">
+<article className="panel stock-panel">
+<div className="panel-head">
+<div>
+<span className="section-icon green">
+<PackageCheck size={20}/>
+</span>
+<h2>Estado de stock</h2>
+<p>Distribución actual</p>
+</div>
+</div>
+<div className="donut">
+<div>
+<strong>{number(totalTons)}</strong>
+<span>toneladas</span>
+</div>
+</div>
+<ul className="stock-list">
+<li>
+<span>
+<i className="dot green-dot"/>Disponible</span>
+<strong>{number(status('available'))} ton</strong>
+</li>
+<li>
+<span>
+<i className="dot blue-dot"/>En tránsito</span>
+<strong>{number(status('in_transit'))} ton</strong>
+</li>
+<li>
+<span>
+<i className="dot gray-dot"/>Reservado</span>
+<strong>{number(status('reserved'))} ton</strong>
+</li>
+</ul>
+</article>
+<article className="panel finance">
+<div className="panel-head">
+<div>
+<span className="section-icon violet">
+<CircleDollarSign size={20}/>
+</span>
+<h2>Resumen financiero</h2>
+<p>Tasa: 1 USD = {number(rate)} LPS</p>
+</div>
+<select value={currency} onChange={e => setCurrency(e.target.value as 'LPS' | 'USD')}>
+<option>LPS</option>
+<option>USD</option>
+</select>
+</div>
+<dl>
+<div>
+<dt>Total invertido</dt>
+<dd>{money(totals.cost, currency)}</dd>
+</div>
+<div>
+<dt>Total facturado</dt>
+<dd>{money(billed, currency)}</dd>
+</div>
+<div className="profit">
+<dt>Ganancia estimada</dt>
+<dd>{money(totals.sale - totals.cost, currency)}</dd>
+</div>
+</dl>
+</article>
+</div>
+</section>
+<section className="recent-section">
+<div className="section-title">
+<div>
+<ClipboardList />
+<div>
+<h2>Actividades recientes</h2>
+<p>Últimos ingresos registrados</p>
+</div>
+</div>
+</div>
+<div className="activity-grid">
+<article className="panel compact">
+<h3>Inventarios recientes</h3>{inventory.slice(0, 4).map(row => <div className="activity-row" key={row.id}>
+<span className="mini-avatar">{initials(row.material)}</span>
+<div>
+<strong>{row.material} · {row.category}</strong>
+<small>Ingreso de {number(row.quantity)} {row.unit}</small>
+</div>
+<time>{formatDate(row.received_at)}</time>
+</div>)}{!inventory.length && <EmptyState message="Aún no hay inventario."/>}</article>
+<article className="panel compact">
+<h3>Cadena de abastecimiento</h3>{inventory.slice(0, 4).map(row => <div className="activity-row" key={row.id}>
+<span className="mini-avatar greenish">{initials(row.supplier)}</span>
+<div>
+<strong>{row.supplier}</strong>
+<small>{providerType(row.supplier_type)} · {row.material}</small>
+</div>
+<time>{formatDate(row.received_at)}</time>
+</div>)}{!inventory.length && <EmptyState message="Aún no hay entregas."/>}</article>
+</div>
+</section>
+</>;
 }
-
-function Inventory({onEdit,notify}:{onEdit:(record?:InventoryRecord)=>void;notify:(n:Notice)=>void}){
-  const{inventory,materials,settings,deleteInventory,loading}=useEconexoData();const[query,setQuery]=useState('');const[viewing,setViewing]=useState<InventoryRecord|null>(null);const[confirm,setConfirm]=useState<InventoryRecord|null>(null);
-  const[deleting,setDeleting]=useState<InventoryRecord|null>(null);const[deleteSucceeded,setDeleteSucceeded]=useState(false);const[deletingIndex,setDeletingIndex]=useState(0);const source=[...inventory];if(deleting&&!source.some(r=>r.id===deleting.id))source.splice(deletingIndex,0,deleting);const rows=source.filter(r=>[r.inventory_code,r.material,r.category,r.supplier].join(' ').toLowerCase().includes(query.toLowerCase()));const stockValue=inventory.reduce((s,r)=>s+toCurrency(asNumber(r.cost_total),r.currency??'LPS',settings?.default_currency??'LPS',settings?.usd_to_lps_rate??24.75),0);
-  return <><PageTitle eyebrow="CONTROL DE EXISTENCIAS" title="Inventarios" subtitle="Crea, consulta, edita y elimina registros almacenados en la base de datos." action={<Button size="lg" onClick={()=>onEdit()}><Plus/>Agregar inventario</Button>}/><div className="summary-strip"><div><span>Registros activos</span><strong>{inventory.length}</strong></div><div><span>Peso total</span><strong>{number(inventory.reduce((s,r)=>s+asNumber(r.tons),0))} ton</strong></div><div><span>Valor del stock</span><strong>{money(stockValue,settings?.default_currency??'LPS')}</strong></div><div><span>Materiales</span><strong>{materials.filter(x=>x.active).length} activos</strong></div></div><section className="panel table-panel"><div className="toolbar"><label className="search"><Search/><input placeholder="Buscar material, proveedor o ID…" value={query} onChange={e=>setQuery(e.target.value)}/></label></div><div className="table-wrap fluid-table" role="region" aria-label="Inventarios" tabIndex={0} aria-busy={loading&&!deleting}><table><thead><tr>{['ID / Fecha','Material / Categoría','Cantidad','Equivalencias','Proveedor','Costo / Venta','Moneda','Estado','Acciones'].map(h=><th scope="col" key={h}>{h}</th>)}</tr></thead><tbody>{loading&&!deleting?<TableSkeleton columns={9}/>:rows.length?rows.map((r,index)=><TableRow key={r.id} id={r.id} index={index} exiting={deleteSucceeded&&deleting?.id===r.id}><td><strong>{r.inventory_code}</strong><small>{formatDate(r.received_at)}</small></td><td><strong>{r.material}</strong><small>{r.category}</small></td><td><strong>{number(r.quantity)} {r.unit}</strong><small>Unidad original</small></td><td><span>{number(r.pounds)} lb</span><small>{number(r.tons)} ton</small></td><td><strong>{r.supplier}</strong><small>{providerType(r.supplier_type)}</small></td><td><span>{money(r.cost_price,r.currency??'LPS')}</span><small>Venta {money(r.sale_price,r.currency??'LPS')}</small></td><td>{r.currency??'—'}</td><td><StatusBadge>{stockStatus(r.status)}</StatusBadge></td><td><div className="row-actions"><TableAction label="Ver detalle" onClick={()=>setViewing(r)}><Eye/></TableAction><TableAction label="Editar" onClick={()=>onEdit(r)}><Edit3/></TableAction><TableAction label="Eliminar" danger onClick={()=>setConfirm(r)}><Trash2/></TableAction></div></td></TableRow>):<TableEmpty columns={9} message="No hay registros que coincidan."/>}</tbody></table></div></section>{viewing&&<Modal title={viewing.inventory_code} subtitle="Detalle completo del registro" onClose={()=>setViewing(null)}><div className="detail-grid"><div><span>Material</span><strong>{viewing.material} · {viewing.category}</strong></div><div><span>Fecha</span><strong>{formatDate(viewing.received_at)}</strong></div><div><span>Cantidad original</span><strong>{number(viewing.quantity)} {viewing.unit}</strong></div><div><span>Conversión</span><strong>{number(viewing.pounds)} lb / {number(viewing.tons)} ton</strong></div><div><span>Proveedor</span><strong>{viewing.supplier}</strong></div><div><span>Entregado por</span><strong>{viewing.delivered_by}</strong></div><div><span>Costo total</span><strong>{money(viewing.cost_total,viewing.currency??'LPS')}</strong></div><div><span>Venta estimada</span><strong>{money(viewing.estimated_sale,viewing.currency??'LPS')}</strong></div><div><span>Ganancia estimada</span><strong>{money(viewing.estimated_profit,viewing.currency??'LPS')}</strong></div><div className="full"><span>Observaciones</span><strong>{viewing.notes||'Sin observaciones'}</strong></div></div><div className="modal-actions"><Button variant="outline" onClick={()=>setViewing(null)}>Cerrar</Button><Button onClick={()=>{setViewing(null);onEdit(viewing)}}><Edit3/>Editar</Button></div></Modal>}{confirm&&<Modal title="Eliminar inventario" subtitle="Esta acción no se puede deshacer." onClose={()=>setConfirm(null)}><p>¿Deseas eliminar <strong>{confirm.inventory_code}</strong>?</p><div className="modal-actions"><Button variant="outline" onClick={()=>setConfirm(null)}>Cancelar</Button><Button variant="destructive" disabled={loading} onClick={async()=>{try{setDeletingIndex(inventory.findIndex(r=>r.id===confirm.id));setDeleting(confirm);setDeleteSucceeded(false);await deleteInventory(confirm.id);setConfirm(null);setDeleteSucceeded(true);await new Promise(resolve=>setTimeout(resolve,window.matchMedia('(prefers-reduced-motion: reduce)').matches?0:220));setDeleting(null);setDeleteSucceeded(false);notify({message:'Inventario eliminado'})}catch(e){setDeleting(null);setDeleteSucceeded(false);notify({message:e instanceof Error?e.message:'No se pudo eliminar',tone:'error'})}}}>{loading?'Eliminando…':'Eliminar'}</Button></div></Modal>}</>;
+function Inventory({ onEdit, notify }: {
+    onEdit: (record?: InventoryRecord) => void;
+    notify: (n: Notice) => void;
+}) {
+    const { inventory, materials, settings, deleteInventory, loading } = useEconexoData();
+    const [query, setQuery] = useState('');
+    const [viewing, setViewing] = useState<InventoryRecord | null>(null);
+    const [confirm, setConfirm] = useState<InventoryRecord | null>(null);
+    const [deleting, setDeleting] = useState<InventoryRecord | null>(null);
+    const [deleteSucceeded, setDeleteSucceeded] = useState(false);
+    const [deletingIndex, setDeletingIndex] = useState(0);
+    const source = [...inventory];
+    if (deleting && !source.some(r => r.id === deleting.id))
+        source.splice(deletingIndex, 0, deleting);
+    const rows = source.filter(r => [r.inventory_code, r.material, r.category, r.supplier].join(' ').toLowerCase().includes(query.toLowerCase()));
+    const stockValue = inventory.reduce((s, r) => s + toCurrency(asNumber(r.cost_total), r.currency ?? 'LPS', settings?.default_currency ?? 'LPS', settings?.usd_to_lps_rate ?? 24.75), 0);
+    return <>
+<PageTitle eyebrow="CONTROL DE EXISTENCIAS" title="Inventarios" subtitle="Crea, consulta, edita y elimina registros almacenados en la base de datos." action={<Button size="lg" onClick={() => onEdit()}>
+<Plus />Agregar inventario</Button>}/>
+<div className="summary-strip">
+<div>
+<span>Registros activos</span>
+<strong>{inventory.length}</strong>
+</div>
+<div>
+<span>Peso total</span>
+<strong>{number(inventory.reduce((s, r) => s + asNumber(r.tons), 0))} ton</strong>
+</div>
+<div>
+<span>Valor del stock</span>
+<strong>{money(stockValue, settings?.default_currency ?? 'LPS')}</strong>
+</div>
+<div>
+<span>Materiales</span>
+<strong>{materials.filter(x => x.active).length} activos</strong>
+</div>
+</div>
+<section className="panel table-panel">
+<div className="toolbar">
+<label className="search">
+<Search />
+<input placeholder="Buscar material, proveedor o ID…" value={query} onChange={e => setQuery(e.target.value)}/>
+</label>
+</div>
+<div className="table-wrap fluid-table" role="region" aria-label="Inventarios" tabIndex={0} aria-busy={loading && !deleting}>
+<table>
+<thead>
+<tr>{['ID / Fecha', 'Material / Categoría', 'Cantidad', 'Equivalencias', 'Proveedor', 'Costo / Venta', 'Moneda', 'Estado', 'Acciones'].map(h => <th scope="col" key={h}>{h}</th>)}</tr>
+</thead>
+<tbody>{loading && !deleting ? <TableSkeleton columns={9}/> : rows.length ? rows.map((r, index) => <TableRow key={r.id} id={r.id} index={index} exiting={deleteSucceeded && deleting?.id === r.id}>
+<td>
+<strong>{r.inventory_code}</strong>
+<small>{formatDate(r.received_at)}</small>
+</td>
+<td>
+<strong>{r.material}</strong>
+<small>{r.category}</small>
+</td>
+<td>
+<strong>{number(r.quantity)} {r.unit}</strong>
+<small>Unidad original</small>
+</td>
+<td>
+<span>{number(r.pounds)} lb</span>
+<small>{number(r.tons)} ton</small>
+</td>
+<td>
+<strong>{r.supplier}</strong>
+<small>{providerType(r.supplier_type)}</small>
+</td>
+<td>
+<span>{money(r.cost_price, r.currency ?? 'LPS')}</span>
+<small>Venta {money(r.sale_price, r.currency ?? 'LPS')}</small>
+</td>
+<td>{r.currency ?? '—'}</td>
+<td>
+<StatusBadge>{stockStatus(r.status)}</StatusBadge>
+</td>
+<td>
+<div className="row-actions">
+<TableAction label="Ver detalle" onClick={() => setViewing(r)}>
+<Eye />
+</TableAction>
+<TableAction label="Editar" onClick={() => onEdit(r)}>
+<Edit3 />
+</TableAction>
+<TableAction label="Eliminar" danger onClick={() => setConfirm(r)}>
+<Trash2 />
+</TableAction>
+</div>
+</td>
+</TableRow>) : <TableEmpty columns={9} message="No hay registros que coincidan."/>}</tbody>
+</table>
+</div>
+</section>{viewing && <Modal title={viewing.inventory_code} subtitle="Detalle completo del registro" onClose={() => setViewing(null)}>
+<div className="detail-grid">
+<div>
+<span>Material</span>
+<strong>{viewing.material} · {viewing.category}</strong>
+</div>
+<div>
+<span>Fecha</span>
+<strong>{formatDate(viewing.received_at)}</strong>
+</div>
+<div>
+<span>Cantidad original</span>
+<strong>{number(viewing.quantity)} {viewing.unit}</strong>
+</div>
+<div>
+<span>Conversión</span>
+<strong>{number(viewing.pounds)} lb / {number(viewing.tons)} ton</strong>
+</div>
+<div>
+<span>Proveedor</span>
+<strong>{viewing.supplier}</strong>
+</div>
+<div>
+<span>Entregado por</span>
+<strong>{viewing.delivered_by}</strong>
+</div>
+<div>
+<span>Costo total</span>
+<strong>{money(viewing.cost_total, viewing.currency ?? 'LPS')}</strong>
+</div>
+<div>
+<span>Venta estimada</span>
+<strong>{money(viewing.estimated_sale, viewing.currency ?? 'LPS')}</strong>
+</div>
+<div>
+<span>Ganancia estimada</span>
+<strong>{money(viewing.estimated_profit, viewing.currency ?? 'LPS')}</strong>
+</div>
+<div className="full">
+<span>Observaciones</span>
+<strong>{viewing.notes || 'Sin observaciones'}</strong>
+</div>
+</div>
+<div className="modal-actions">
+<Button variant="outline" onClick={() => setViewing(null)}>Cerrar</Button>
+<Button onClick={() => { setViewing(null); onEdit(viewing); }}>
+<Edit3 />Editar</Button>
+</div>
+</Modal>}{confirm && <Modal title="Eliminar inventario" subtitle="Esta acción no se puede deshacer." onClose={() => setConfirm(null)}>
+<p>¿Deseas eliminar <strong>{confirm.inventory_code}</strong>?</p>
+<div className="modal-actions">
+<Button variant="outline" onClick={() => setConfirm(null)}>Cancelar</Button>
+<Button variant="destructive" disabled={loading} onClick={async () => { try {
+        setDeletingIndex(inventory.findIndex(r => r.id === confirm.id));
+        setDeleting(confirm);
+        setDeleteSucceeded(false);
+        await deleteInventory(confirm.id);
+        setConfirm(null);
+        setDeleteSucceeded(true);
+        await new Promise(resolve => setTimeout(resolve, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 220));
+        setDeleting(null);
+        setDeleteSucceeded(false);
+        notify({ message: 'Inventario eliminado' });
+    }
+    catch (e) {
+        setDeleting(null);
+        setDeleteSucceeded(false);
+        notify({ message: e instanceof Error ? e.message : 'No se pudo eliminar', tone: 'error' });
+    } }}>{loading ? 'Eliminando…' : 'Eliminar'}</Button>
+</div>
+</Modal>}</>;
 }
-
-function LegacyInventoryForm({record,onBack,notify}:{record?:InventoryRecord;onBack:()=>void;notify:(n:Notice)=>void}){
-  const{materials,categories,suppliers,settings,createInventory,updateInventory,loading}=useEconexoData();const rate=settings?.usd_to_lps_rate??24.75;
-  const[materialId,setMaterialId]=useState(record?.material_id??materials.find(x=>x.active)?.id??'');const availableCategories=categories.filter(x=>x.material_id===materialId&&x.active);const[categoryId,setCategoryId]=useState(record?.category_id??'');const[supplierId,setSupplierId]=useState(record?.supplier_id??suppliers.find(x=>x.active)?.id??'');const[deliveredBy,setDeliveredBy]=useState(record?.delivered_by??'');const[qty,setQty]=useState(record?.quantity??0);const[unit,setUnit]=useState<'lb'|'ton'>(record?.unit??settings?.default_weight_unit??'lb');const[currency,setCurrency]=useState<'LPS'|'USD'>(record?.currency??settings?.default_currency??'LPS');const[cost,setCost]=useState(record?.cost_price??0);const[sale,setSale]=useState(record?.sale_price??0);const[date,setDate]=useState(record?.received_at??new Date().toISOString().slice(0,10));const[notes,setNotes]=useState(record?.notes??'');const[error,setError]=useState('');
-  const pounds=unit==='lb'?qty:qty*2000,tons=unit==='ton'?qty:qty/2000,totalCost=qty*cost,totalSale=qty*sale,otherCurrency=currency==='LPS'?'USD':'LPS';
-  const submit=async(e:React.FormEvent)=>{e.preventDefault();setError('');const effectiveCategory=categoryId||availableCategories[0]?.id;if(!materialId||!effectiveCategory||!supplierId||!deliveredBy.trim()||qty<=0){setError('Completa material, categoría, proveedor, persona que entrega y una cantidad válida.');return}try{const input={material_id:materialId,category_id:effectiveCategory,supplier_id:supplierId,delivered_by:deliveredBy.trim(),quantity:qty,unit,currency,cost_price:cost,sale_price:sale,exchange_rate:rate,received_at:date,notes};if(record)await updateInventory(record.id,input);else await createInventory(input);notify({message:record?'Inventario actualizado':'Inventario guardado'});onBack()}catch(err){setError(err instanceof Error?err.message:'No fue posible guardar')}};
-  return <><PageTitle eyebrow={record?'EDICIÓN DE MOVIMIENTO':'NUEVO MOVIMIENTO'} title={record?'Editar inventario':'Agregar inventario'} subtitle="Las conversiones de peso y moneda se calculan automáticamente." action={<Button variant="outline" onClick={onBack}>Volver al inventario</Button>}/><form className="form-layout" onSubmit={submit}><section className="panel form-card"><h2>Información del material</h2><div className="form-grid"><label>Material<select required value={materialId} onChange={e=>{setMaterialId(e.target.value);setCategoryId('')}}><option value="">Selecciona</option>{materials.filter(x=>x.active).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label><label>Categoría<select required value={categoryId||availableCategories[0]?.id||''} onChange={e=>setCategoryId(e.target.value)}><option value="">Selecciona</option>{availableCategories.map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label><label>Cantidad<input type="number" min="0.0001" step="0.0001" value={qty||''} onChange={e=>setQty(Number(e.target.value))} required/></label><label>Unidad<select value={unit} onChange={e=>setUnit(e.target.value as 'lb'|'ton')}><option value="lb">Libras (lb)</option><option value="ton">Toneladas (ton)</option></select></label></div><div className="converter"><div><span>Cantidad ingresada</span><strong>{number(qty,4)} {unit}</strong></div><span className="equals">=</span><div><span>Equivalencia</span><strong>{unit==='lb'?`${number(tons,4)} ton`:`${number(pounds,4)} lb`}</strong></div><small>1 tonelada = 2,000 libras</small></div><h2>Origen y compra</h2><div className="form-grid"><label>Proveedor<select required value={supplierId} onChange={e=>setSupplierId(e.target.value)}><option value="">Selecciona</option>{suppliers.filter(x=>x.active).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label><label>Persona que entregó<input required value={deliveredBy} onChange={e=>setDeliveredBy(e.target.value)}/></label><label>Tipo de proveedor<input readOnly value={providerType(suppliers.find(x=>x.id===supplierId)?.type??'collector')}/></label><label>Fecha de ingreso<input type="date" required value={date} onChange={e=>setDate(e.target.value)}/></label><label>Precio de costo / {unit}<input type="number" min="0" step="0.0001" value={cost} onChange={e=>setCost(Number(e.target.value))}/></label><label>Precio de venta / {unit}<input type="number" min="0" step="0.0001" value={sale} onChange={e=>setSale(Number(e.target.value))}/></label><label>Moneda<select value={currency} onChange={e=>setCurrency(e.target.value as 'LPS'|'USD')}><option value="LPS">LPS — Lempiras</option><option value="USD">USD — Dólares</option></select><small>1 USD = {number(rate,4)} LPS</small></label><label className="full">Observaciones<textarea value={notes??''} onChange={e=>setNotes(e.target.value)} placeholder="Detalles adicionales…"/></label></div>{error&&<div className="form-error">{error}</div>}</section><aside className="panel totals-card"><h2>Resumen del registro</h2><dl><div><dt>Peso en libras</dt><dd>{number(pounds,4)} lb</dd></div><div><dt>Peso en toneladas</dt><dd>{number(tons,4)} ton</dd></div><div><dt>Costo total</dt><dd>{money(totalCost,currency)}</dd></div><div><dt>Costo en {otherCurrency}</dt><dd>{money(toCurrency(totalCost,currency,otherCurrency,rate),otherCurrency)}</dd></div><div><dt>Venta estimada</dt><dd>{money(totalSale,currency)}</dd></div><div><dt>Venta en {otherCurrency}</dt><dd>{money(toCurrency(totalSale,currency,otherCurrency,rate),otherCurrency)}</dd></div><div className="profit"><dt>Ganancia estimada</dt><dd>{money(totalSale-totalCost,currency)}</dd></div></dl><Button size="lg" type="submit" disabled={loading}>{loading?'Guardando…':<><Check/>{record?'Actualizar inventario':'Guardar inventario'}</>}</Button><Button variant="outline" type="button" onClick={onBack}>Cancelar</Button></aside></form></>;
+function LegacyInventoryForm({ record, onBack, notify }: {
+    record?: InventoryRecord;
+    onBack: () => void;
+    notify: (n: Notice) => void;
+}) {
+    const { materials, categories, suppliers, settings, createInventory, updateInventory, loading } = useEconexoData();
+    const rate = settings?.usd_to_lps_rate ?? 24.75;
+    const [materialId, setMaterialId] = useState(record?.material_id ?? materials.find(x => x.active)?.id ?? '');
+    const availableCategories = categories.filter(x => x.material_id === materialId && x.active);
+    const [categoryId, setCategoryId] = useState(record?.category_id ?? '');
+    const [supplierId, setSupplierId] = useState(record?.supplier_id ?? suppliers.find(x => x.active)?.id ?? '');
+    const [deliveredBy, setDeliveredBy] = useState(record?.delivered_by ?? '');
+    const [qty, setQty] = useState(record?.quantity ?? 0);
+    const [unit, setUnit] = useState<'lb' | 'ton'>(record?.unit ?? settings?.default_weight_unit ?? 'lb');
+    const [currency, setCurrency] = useState<'LPS' | 'USD'>(record?.currency ?? settings?.default_currency ?? 'LPS');
+    const [cost, setCost] = useState(record?.cost_price ?? 0);
+    const [sale, setSale] = useState(record?.sale_price ?? 0);
+    const [date, setDate] = useState(record?.received_at ?? new Date().toISOString().slice(0, 10));
+    const [notes, setNotes] = useState(record?.notes ?? '');
+    const [error, setError] = useState('');
+    const pounds = unit === 'lb' ? qty : qty * 2000, tons = unit === 'ton' ? qty : qty / 2000, totalCost = qty * cost, totalSale = qty * sale, otherCurrency = currency === 'LPS' ? 'USD' : 'LPS';
+    const submit = async (e: React.FormEvent) => { e.preventDefault(); setError(''); const effectiveCategory = categoryId || availableCategories[0]?.id; if (!materialId || !effectiveCategory || !supplierId || !deliveredBy.trim() || qty <= 0) {
+        setError('Completa material, categoría, proveedor, persona que entrega y una cantidad válida.');
+        return;
+    } try {
+        const input = { material_id: materialId, category_id: effectiveCategory, supplier_id: supplierId, delivered_by: deliveredBy.trim(), quantity: qty, unit, currency, cost_price: cost, sale_price: sale, exchange_rate: rate, received_at: date, notes };
+        if (record)
+            await updateInventory(record.id, input);
+        else
+            await createInventory(input);
+        notify({ message: record ? 'Inventario actualizado' : 'Inventario guardado' });
+        onBack();
+    }
+    catch (err) {
+        setError(err instanceof Error ? err.message : 'No fue posible guardar');
+    } };
+    return <>
+<PageTitle eyebrow={record ? 'EDICIÓN DE MOVIMIENTO' : 'NUEVO MOVIMIENTO'} title={record ? 'Editar inventario' : 'Agregar inventario'} subtitle="Las conversiones de peso y moneda se calculan automáticamente." action={<Button variant="outline" onClick={onBack}>Volver al inventario</Button>}/>
+<form className="form-layout" onSubmit={submit}>
+<section className="panel form-card">
+<h2>Información del material</h2>
+<div className="form-grid">
+<label>Material<select required value={materialId} onChange={e => { setMaterialId(e.target.value); setCategoryId(''); }}>
+<option value="">Selecciona</option>{materials.filter(x => x.active).map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select>
+</label>
+<label>Categoría<select required value={categoryId || availableCategories[0]?.id || ''} onChange={e => setCategoryId(e.target.value)}>
+<option value="">Selecciona</option>{availableCategories.map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select>
+</label>
+<label>Cantidad<input type="number" min="0.0001" step="0.0001" value={qty || ''} onChange={e => setQty(Number(e.target.value))} required/>
+</label>
+<label>Unidad<select value={unit} onChange={e => setUnit(e.target.value as 'lb' | 'ton')}>
+<option value="lb">Libras (lb)</option>
+<option value="ton">Toneladas (ton)</option>
+</select>
+</label>
+</div>
+<div className="converter">
+<div>
+<span>Cantidad ingresada</span>
+<strong>{number(qty, 4)} {unit}</strong>
+</div>
+<span className="equals">=</span>
+<div>
+<span>Equivalencia</span>
+<strong>{unit === 'lb' ? `${number(tons, 4)} ton` : `${number(pounds, 4)} lb`}</strong>
+</div>
+<small>1 tonelada = 2,000 libras</small>
+</div>
+<h2>Origen y compra</h2>
+<div className="form-grid">
+<label>Proveedor<select required value={supplierId} onChange={e => setSupplierId(e.target.value)}>
+<option value="">Selecciona</option>{suppliers.filter(x => x.active).map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select>
+</label>
+<label>Persona que entregó<input required value={deliveredBy} onChange={e => setDeliveredBy(e.target.value)}/>
+</label>
+<label>Tipo de proveedor<input readOnly value={providerType(suppliers.find(x => x.id === supplierId)?.type ?? 'collector')}/>
+</label>
+<label>Fecha de ingreso<input type="date" required value={date} onChange={e => setDate(e.target.value)}/>
+</label>
+<label>Precio de costo / {unit}<input type="number" min="0" step="0.0001" value={cost} onChange={e => setCost(Number(e.target.value))}/>
+</label>
+<label>Precio de venta / {unit}<input type="number" min="0" step="0.0001" value={sale} onChange={e => setSale(Number(e.target.value))}/>
+</label>
+<label>Moneda<select value={currency} onChange={e => setCurrency(e.target.value as 'LPS' | 'USD')}>
+<option value="LPS">LPS — Lempiras</option>
+<option value="USD">USD — Dólares</option>
+</select>
+<small>1 USD = {number(rate, 4)} LPS</small>
+</label>
+<label className="full">Observaciones<textarea value={notes ?? ''} onChange={e => setNotes(e.target.value)} placeholder="Detalles adicionales…"/>
+</label>
+</div>{error && <div className="form-error">{error}</div>}</section>
+<aside className="panel totals-card">
+<h2>Resumen del registro</h2>
+<dl>
+<div>
+<dt>Peso en libras</dt>
+<dd>{number(pounds, 4)} lb</dd>
+</div>
+<div>
+<dt>Peso en toneladas</dt>
+<dd>{number(tons, 4)} ton</dd>
+</div>
+<div>
+<dt>Costo total</dt>
+<dd>{money(totalCost, currency)}</dd>
+</div>
+<div>
+<dt>Costo en {otherCurrency}</dt>
+<dd>{money(toCurrency(totalCost, currency, otherCurrency, rate), otherCurrency)}</dd>
+</div>
+<div>
+<dt>Venta estimada</dt>
+<dd>{money(totalSale, currency)}</dd>
+</div>
+<div>
+<dt>Venta en {otherCurrency}</dt>
+<dd>{money(toCurrency(totalSale, currency, otherCurrency, rate), otherCurrency)}</dd>
+</div>
+<div className="profit">
+<dt>Ganancia estimada</dt>
+<dd>{money(totalSale - totalCost, currency)}</dd>
+</div>
+</dl>
+<Button size="lg" type="submit" disabled={loading}>{loading ? 'Guardando…' : <>
+<Check />{record ? 'Actualizar inventario' : 'Guardar inventario'}</>}</Button>
+<Button variant="outline" type="button" onClick={onBack}>Cancelar</Button>
+</aside>
+</form>
+</>;
 }
-
-function InventoryForm({record,onBack,notify}:{record?:InventoryRecord;onBack:()=>void;notify:(n:Notice)=>void}){
-  const{materials,categories,suppliers,settings,createInventory,updateInventory,loading}=useEconexoData();
-  const rate=settings?.usd_to_lps_rate??24.75;
-  const[materialId,setMaterialId]=useState(record?.material_id??materials.find(x=>x.active)?.id??'');
-  const availableCategories=categories.filter(x=>x.material_id===materialId&&x.active);
-  const[categoryId,setCategoryId]=useState(record?.category_id??'');
-  const[supplierId,setSupplierId]=useState(record?.supplier_id??suppliers.find(x=>x.active)?.id??'');
-  const[deliveredBy,setDeliveredBy]=useState(record?.delivered_by??'');
-  const[qty,setQty]=useState(record?.quantity??0);
-  const[unit,setUnit]=useState<'lb'|'ton'>(record?.unit??settings?.default_weight_unit??'lb');
-  const[currency,setCurrency]=useState<'LPS'|'USD'>(record?.currency??settings?.default_currency??'LPS');
-  const[status,setStatus]=useState<InventoryRecord['status']>(record?.status??'available');
-  const[cost,setCost]=useState(record?.cost_price??0);const[sale,setSale]=useState(record?.sale_price??0);
-  const[date,setDate]=useState(record?.received_at??new Date().toISOString().slice(0,10));
-  const[notes,setNotes]=useState(record?.notes??'');const[error,setError]=useState('');
-  const pounds=unit==='lb'?qty:qty*2000,tons=unit==='ton'?qty:qty/2000;
-  const totalCost=qty*cost,totalSale=qty*sale,otherCurrency=currency==='LPS'?'USD':'LPS';
-  const submit=async(e:React.FormEvent)=>{e.preventDefault();setError('');const effectiveCategory=categoryId||availableCategories[0]?.id;if(!materialId||!effectiveCategory||!supplierId||!deliveredBy.trim()||qty<=0){setError('Completa material, categoría, proveedor, persona que entrega y una cantidad válida.');return}try{const input={material_id:materialId,category_id:effectiveCategory,supplier_id:supplierId,delivered_by:deliveredBy.trim(),quantity:qty,unit,currency,status,cost_price:cost,sale_price:sale,exchange_rate:rate,received_at:date,notes};if(record)await updateInventory(record.id,input);else await createInventory(input);notify({message:record?'Inventario actualizado':'Inventario guardado'});onBack()}catch(err){setError(err instanceof Error?err.message:'No fue posible guardar')}};
-  return <>
-    <PageTitle eyebrow={record?'ACTUALIZAR EXISTENCIA':'NUEVA ENTRADA'} title={record?'Editar inventario':'Agregar inventario'} subtitle="Registra el peso, origen, estado y precios unitarios del material." action={<Button variant="outline" onClick={onBack}>Volver al inventario</Button>}/>
+function InventoryForm({ record, onBack, notify }: {
+    record?: InventoryRecord;
+    onBack: () => void;
+    notify: (n: Notice) => void;
+}) {
+    const { materials, categories, suppliers, settings, createInventory, updateInventory, loading } = useEconexoData();
+    const rate = settings?.usd_to_lps_rate ?? 24.75;
+    const [materialId, setMaterialId] = useState(record?.material_id ?? materials.find(x => x.active)?.id ?? '');
+    const availableCategories = categories.filter(x => x.material_id === materialId && x.active);
+    const [categoryId, setCategoryId] = useState(record?.category_id ?? '');
+    const [supplierId, setSupplierId] = useState(record?.supplier_id ?? suppliers.find(x => x.active)?.id ?? '');
+    const [deliveredBy, setDeliveredBy] = useState(record?.delivered_by ?? '');
+    const [qty, setQty] = useState(record?.quantity ?? 0);
+    const [unit, setUnit] = useState<'lb' | 'ton'>(record?.unit ?? settings?.default_weight_unit ?? 'lb');
+    const [currency, setCurrency] = useState<'LPS' | 'USD'>(record?.currency ?? settings?.default_currency ?? 'LPS');
+    const [status, setStatus] = useState<InventoryRecord['status']>(record?.status ?? 'available');
+    const [cost, setCost] = useState(record?.cost_price ?? 0);
+    const [sale, setSale] = useState(record?.sale_price ?? 0);
+    const [date, setDate] = useState(record?.received_at ?? new Date().toISOString().slice(0, 10));
+    const [notes, setNotes] = useState(record?.notes ?? '');
+    const [error, setError] = useState('');
+    const pounds = unit === 'lb' ? qty : qty * 2000, tons = unit === 'ton' ? qty : qty / 2000;
+    const totalCost = qty * cost, totalSale = qty * sale, otherCurrency = currency === 'LPS' ? 'USD' : 'LPS';
+    const submit = async (e: React.FormEvent) => { e.preventDefault(); setError(''); const effectiveCategory = categoryId || availableCategories[0]?.id; if (!materialId || !effectiveCategory || !supplierId || !deliveredBy.trim() || qty <= 0) {
+        setError('Completa material, categoría, proveedor, persona que entrega y una cantidad válida.');
+        return;
+    } try {
+        const input = { material_id: materialId, category_id: effectiveCategory, supplier_id: supplierId, delivered_by: deliveredBy.trim(), quantity: qty, unit, currency, status, cost_price: cost, sale_price: sale, exchange_rate: rate, received_at: date, notes };
+        if (record)
+            await updateInventory(record.id, input);
+        else
+            await createInventory(input);
+        notify({ message: record ? 'Inventario actualizado' : 'Inventario guardado' });
+        onBack();
+    }
+    catch (err) {
+        setError(err instanceof Error ? err.message : 'No fue posible guardar');
+    } };
+    return <>
+    <PageTitle eyebrow={record ? 'ACTUALIZAR EXISTENCIA' : 'NUEVA ENTRADA'} title={record ? 'Editar inventario' : 'Agregar inventario'} subtitle="Registra el peso, origen, estado y precios unitarios del material." action={<Button variant="outline" onClick={onBack}>Volver al inventario</Button>}/>
     <form className="form-layout" onSubmit={submit}>
       <section className="panel form-card">
         <h2>Información del material</h2>
         <div className="form-grid">
-          <label>Material<select required value={materialId} onChange={e=>{setMaterialId(e.target.value);setCategoryId('')}}><option value="">Selecciona</option>{materials.filter(x=>x.active).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label>
-          <label>Categoría<select required value={categoryId||availableCategories[0]?.id||''} onChange={e=>setCategoryId(e.target.value)}><option value="">Selecciona</option>{availableCategories.map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label>
-          <label>Cantidad<input type="number" min="0.0001" step="0.0001" value={qty||''} onChange={e=>setQty(Number(e.target.value))} required/></label>
-          <label>Unidad<select value={unit} onChange={e=>setUnit(e.target.value as 'lb'|'ton')}><option value="lb">Libras (lb)</option><option value="ton">Toneladas (ton)</option></select></label>
+          <label>Material<select required value={materialId} onChange={e => { setMaterialId(e.target.value); setCategoryId(''); }}>
+<option value="">Selecciona</option>{materials.filter(x => x.active).map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select>
+</label>
+          <label>Categoría<select required value={categoryId || availableCategories[0]?.id || ''} onChange={e => setCategoryId(e.target.value)}>
+<option value="">Selecciona</option>{availableCategories.map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select>
+</label>
+          <label>Cantidad<input type="number" min="0.0001" step="0.0001" value={qty || ''} onChange={e => setQty(Number(e.target.value))} required/>
+</label>
+          <label>Unidad<select value={unit} onChange={e => setUnit(e.target.value as 'lb' | 'ton')}>
+<option value="lb">Libras (lb)</option>
+<option value="ton">Toneladas (ton)</option>
+</select>
+</label>
         </div>
-        <div className="converter"><div><span>Cantidad ingresada</span><strong>{number(qty,4)} {unit}</strong></div><span className="equals">=</span><div><span>Equivalencia</span><strong>{unit==='lb'?`${number(tons,4)} ton`:`${number(pounds,4)} lb`}</strong></div><small>Conversión fija: 1 tonelada = 2,000 libras</small></div>
+        <div className="converter">
+<div>
+<span>Cantidad ingresada</span>
+<strong>{number(qty, 4)} {unit}</strong>
+</div>
+<span className="equals">=</span>
+<div>
+<span>Equivalencia</span>
+<strong>{unit === 'lb' ? `${number(tons, 4)} ton` : `${number(pounds, 4)} lb`}</strong>
+</div>
+<small>Conversión fija: 1 tonelada = 2,000 libras</small>
+</div>
         <h2>Origen y control</h2>
         <div className="form-grid">
-          <label>Proveedor<select required value={supplierId} onChange={e=>setSupplierId(e.target.value)}><option value="">Selecciona</option>{suppliers.filter(x=>x.active).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label>
-          <label>Persona que entregó<input required value={deliveredBy} onChange={e=>setDeliveredBy(e.target.value)}/></label>
-          <label>Tipo de proveedor<input readOnly value={providerType(suppliers.find(x=>x.id===supplierId)?.type??'collector')}/></label>
-          <label>Fecha de ingreso<input type="date" required value={date} onChange={e=>setDate(e.target.value)}/></label>
-          <label>Estado del inventario<select value={status} onChange={e=>setStatus(e.target.value as InventoryRecord['status'])}><option value="available">Disponible</option><option value="in_transit">En tránsito</option><option value="reserved">Reservado</option></select><small>Disponible: listo para vender · En tránsito: pendiente de recepción · Reservado: comprometido con un cliente.</small></label>
+          <label>Proveedor<select required value={supplierId} onChange={e => setSupplierId(e.target.value)}>
+<option value="">Selecciona</option>{suppliers.filter(x => x.active).map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select>
+</label>
+          <label>Persona que entregó<input required value={deliveredBy} onChange={e => setDeliveredBy(e.target.value)}/>
+</label>
+          <label>Tipo de proveedor<input readOnly value={providerType(suppliers.find(x => x.id === supplierId)?.type ?? 'collector')}/>
+</label>
+          <label>Fecha de ingreso<input type="date" required value={date} onChange={e => setDate(e.target.value)}/>
+</label>
+          <label>Estado del inventario<select value={status} onChange={e => setStatus(e.target.value as InventoryRecord['status'])}>
+<option value="available">Disponible</option>
+<option value="in_transit">En tránsito</option>
+<option value="reserved">Reservado</option>
+</select>
+<small>Disponible: listo para vender · En tránsito: pendiente de recepción · Reservado: comprometido con un cliente.</small>
+</label>
         </div>
         <h2>Precios unitarios</h2>
-        <div className="pricing-help"><CircleDollarSign/><div><strong>¿Cómo se calculan?</strong><p>Ingresa el precio por cada {unit==='lb'?'libra':'tonelada'} en {currency}. El sistema multiplica la cantidad original por el precio unitario. Ejemplo: {number(qty)} {unit} × {money(cost,currency)} = {money(totalCost,currency)}.</p></div></div>
+        <div className="pricing-help">
+<CircleDollarSign />
+<div>
+<strong>¿Cómo se calculan?</strong>
+<p>Ingresa el precio por cada {unit === 'lb' ? 'libra' : 'tonelada'} en {currency}. El sistema multiplica la cantidad original por el precio unitario. Ejemplo: {number(qty)} {unit} × {money(cost, currency)} = {money(totalCost, currency)}.</p>
+</div>
+</div>
         <div className="form-grid">
-          <label>Precio de costo por {unit}<input type="number" min="0" step="0.0001" value={cost} onChange={e=>setCost(Number(e.target.value))}/><small>Lo que pagas por cada {unit}.</small></label>
-          <label>Precio de venta por {unit}<input type="number" min="0" step="0.0001" value={sale} onChange={e=>setSale(Number(e.target.value))}/><small>Lo que esperas cobrar por cada {unit}.</small></label>
-          <label>Moneda<select value={currency} onChange={e=>setCurrency(e.target.value as 'LPS'|'USD')}><option value="LPS">LPS — Lempiras</option><option value="USD">USD — Dólares</option></select><small>Conversión: 1 USD = {number(rate,4)} LPS.</small></label>
-          <label className="full">Observaciones<textarea value={notes??''} onChange={e=>setNotes(e.target.value)} placeholder="Detalles adicionales…"/></label>
-        </div>{error&&<div className="form-error">{error}</div>}
+          <label>Precio de costo por {unit}<input type="number" min="0" step="0.0001" value={cost} onChange={e => setCost(Number(e.target.value))}/>
+<small>Lo que pagas por cada {unit}.</small>
+</label>
+          <label>Precio de venta por {unit}<input type="number" min="0" step="0.0001" value={sale} onChange={e => setSale(Number(e.target.value))}/>
+<small>Lo que esperas cobrar por cada {unit}.</small>
+</label>
+          <label>Moneda<select value={currency} onChange={e => setCurrency(e.target.value as 'LPS' | 'USD')}>
+<option value="LPS">LPS — Lempiras</option>
+<option value="USD">USD — Dólares</option>
+</select>
+<small>Conversión: 1 USD = {number(rate, 4)} LPS.</small>
+</label>
+          <label className="full">Observaciones<textarea value={notes ?? ''} onChange={e => setNotes(e.target.value)} placeholder="Detalles adicionales…"/>
+</label>
+        </div>{error && <div className="form-error">{error}</div>}
       </section>
-      <aside className="panel totals-card"><h2>Resumen del registro</h2><StatusBadge>{stockStatus(status)}</StatusBadge><dl><div><dt>Peso en libras</dt><dd>{number(pounds,4)} lb</dd></div><div><dt>Peso en toneladas</dt><dd>{number(tons,4)} ton</dd></div><div><dt>Costo total</dt><dd>{money(totalCost,currency)}</dd></div><div><dt>Costo en {otherCurrency}</dt><dd>{money(toCurrency(totalCost,currency,otherCurrency,rate),otherCurrency)}</dd></div><div><dt>Venta estimada</dt><dd>{money(totalSale,currency)}</dd></div><div><dt>Venta en {otherCurrency}</dt><dd>{money(toCurrency(totalSale,currency,otherCurrency,rate),otherCurrency)}</dd></div><div className="profit"><dt>Ganancia estimada</dt><dd>{money(totalSale-totalCost,currency)}</dd></div></dl><Button size="lg" type="submit" disabled={loading}>{loading?'Guardando…':<><Check/>{record?'Actualizar inventario':'Guardar inventario'}</>}</Button><Button variant="outline" type="button" onClick={onBack}>Cancelar</Button></aside>
+      <aside className="panel totals-card">
+<h2>Resumen del registro</h2>
+<StatusBadge>{stockStatus(status)}</StatusBadge>
+<dl>
+<div>
+<dt>Peso en libras</dt>
+<dd>{number(pounds, 4)} lb</dd>
+</div>
+<div>
+<dt>Peso en toneladas</dt>
+<dd>{number(tons, 4)} ton</dd>
+</div>
+<div>
+<dt>Costo total</dt>
+<dd>{money(totalCost, currency)}</dd>
+</div>
+<div>
+<dt>Costo en {otherCurrency}</dt>
+<dd>{money(toCurrency(totalCost, currency, otherCurrency, rate), otherCurrency)}</dd>
+</div>
+<div>
+<dt>Venta estimada</dt>
+<dd>{money(totalSale, currency)}</dd>
+</div>
+<div>
+<dt>Venta en {otherCurrency}</dt>
+<dd>{money(toCurrency(totalSale, currency, otherCurrency, rate), otherCurrency)}</dd>
+</div>
+<div className="profit">
+<dt>Ganancia estimada</dt>
+<dd>{money(totalSale - totalCost, currency)}</dd>
+</div>
+</dl>
+<Button size="lg" type="submit" disabled={loading}>{loading ? 'Guardando…' : <>
+<Check />{record ? 'Actualizar inventario' : 'Guardar inventario'}</>}</Button>
+<Button variant="outline" type="button" onClick={onBack}>Cancelar</Button>
+</aside>
     </form>
   </>;
 }
-
-function SupplierForm({supplier,type,onClose,notify}:{supplier?:SupplierRecord;type:'collector'|'company';onClose:()=>void;notify:(n:Notice)=>void}){
-  const{saveSupplier,loading}=useEconexoData();const[name,setName]=useState(supplier?.name??'');const[phone,setPhone]=useState(supplier?.phone??'');const[idNumber,setIdNumber]=useState(supplier?.identity_number??'');const[rtn,setRtn]=useState(supplier?.rtn??'');const[contact,setContact]=useState(supplier?.contact_name??'');const[address,setAddress]=useState(supplier?.address??'');const[error,setError]=useState('');
-  const submit=async(e:React.FormEvent)=>{e.preventDefault();if(name.trim().length<2||phone.trim().length<8){setError('Ingresa un nombre y un teléfono de al menos 8 caracteres.');return}try{await saveSupplier({name:name.trim(),phone:phone.trim(),type,identity_number:idNumber||null,rtn:rtn||null,contact_name:contact||null,address:address||null,active:supplier?.active??true},supplier?.id);notify({message:supplier?'Proveedor actualizado':'Proveedor agregado'});onClose()}catch(err){setError(err instanceof Error?err.message:'No fue posible guardar')}};
-  return <Modal title={supplier?'Editar proveedor':`Agregar ${providerType(type).toLowerCase()}`} onClose={onClose}><form onSubmit={submit}><div className="form-grid"><label>{type==='company'?'Nombre de la empresa':'Nombre completo'}<input autoFocus required value={name} onChange={e=>setName(e.target.value)}/></label><label>Teléfono<input required minLength={8} value={phone} onChange={e=>setPhone(e.target.value)}/></label>{type==='company'?<label>RTN (opcional)<input value={rtn} onChange={e=>setRtn(e.target.value)}/></label>:<label>Identidad (opcional)<input value={idNumber} onChange={e=>setIdNumber(e.target.value)}/></label>}<label>Contacto<input value={contact} onChange={e=>setContact(e.target.value)}/></label><label className="full">Dirección<input value={address} onChange={e=>setAddress(e.target.value)}/></label></div>{error&&<div className="form-error">{error}</div>}<div className="modal-actions"><Button variant="outline" type="button" onClick={onClose}>Cancelar</Button><Button type="submit" disabled={loading}>{loading?'Guardando…':'Guardar proveedor'}</Button></div></form></Modal>;
+function SupplierForm({ supplier, type, onClose, notify }: {
+    supplier?: SupplierRecord;
+    type: 'collector' | 'company';
+    onClose: () => void;
+    notify: (n: Notice) => void;
+}) {
+    const { saveSupplier, loading } = useEconexoData();
+    const [name, setName] = useState(supplier?.name ?? '');
+    const [phone, setPhone] = useState(supplier?.phone ?? '');
+    const [idNumber, setIdNumber] = useState(supplier?.identity_number ?? '');
+    const [rtn, setRtn] = useState(supplier?.rtn ?? '');
+    const [contact, setContact] = useState(supplier?.contact_name ?? '');
+    const [address, setAddress] = useState(supplier?.address ?? '');
+    const [error, setError] = useState('');
+    const submit = async (e: React.FormEvent) => { e.preventDefault(); if (name.trim().length < 2 || phone.trim().length < 8) {
+        setError('Ingresa un nombre y un teléfono de al menos 8 caracteres.');
+        return;
+    } try {
+        await saveSupplier({ name: name.trim(), phone: phone.trim(), type, identity_number: idNumber || null, rtn: rtn || null, contact_name: contact || null, address: address || null, active: supplier?.active ?? true }, supplier?.id);
+        notify({ message: supplier ? 'Proveedor actualizado' : 'Proveedor agregado' });
+        onClose();
+    }
+    catch (err) {
+        setError(err instanceof Error ? err.message : 'No fue posible guardar');
+    } };
+    return <Modal title={supplier ? 'Editar proveedor' : `Agregar ${providerType(type).toLowerCase()}`} onClose={onClose}>
+<form onSubmit={submit}>
+<div className="form-grid">
+<label>ID del proveedor<input readOnly value={supplier ? supplierDisplayId(supplier) : 'Se asignará automáticamente'}/>
+</label>
+<label>{type === 'company' ? 'Nombre de la empresa' : 'Nombre completo'}<input autoFocus required value={name} onChange={e => setName(e.target.value)}/>
+</label>
+<label>Teléfono<input required minLength={8} value={phone} onChange={e => setPhone(e.target.value)}/>
+</label>{type === 'company' ? <label>RTN (opcional)<input value={rtn} onChange={e => setRtn(e.target.value)}/>
+</label> : <label>Identidad (opcional)<input value={idNumber} onChange={e => setIdNumber(e.target.value)}/>
+</label>}<label>Contacto<input value={contact} onChange={e => setContact(e.target.value)}/>
+</label>
+<label className="full">Dirección<input value={address} onChange={e => setAddress(e.target.value)}/>
+</label>
+</div>{error && <div className="form-error">{error}</div>}<div className="modal-actions">
+<Button variant="outline" type="button" onClick={onClose}>Cancelar</Button>
+<Button type="submit" disabled={loading}>{loading ? 'Guardando…' : 'Guardar proveedor'}</Button>
+</div>
+</form>
+</Modal>;
 }
-
-function Supply({notify}:{notify:(n:Notice)=>void}){
-  const{suppliers,inventory,supplierHistory}=useEconexoData();const[tab,setTab]=useState<'collector'|'company'>('collector');const[editing,setEditing]=useState<SupplierRecord|null|undefined>();const[historyOwner,setHistoryOwner]=useState<SupplierRecord|null>(null);const[history,setHistory]=useState<Record<string,unknown>[]>([]);const[historyLoading,setHistoryLoading]=useState(false);const filtered=suppliers.filter(x=>x.type===tab);
-  const openHistory=async(s:SupplierRecord)=>{setHistoryOwner(s);setHistoryLoading(true);try{setHistory(await supplierHistory(s.id))}catch(e){notify({message:e instanceof Error?e.message:'No se pudo cargar el historial',tone:'error'})}finally{setHistoryLoading(false)}};
-  return <><PageTitle eyebrow="ORIGEN DEL MATERIAL" title="Cadena de abastecimiento" subtitle="Recolectores y empresas alimentados desde la base de datos." action={<Button size="lg" onClick={()=>setEditing(null)}><Plus/>Agregar proveedor</Button>}/><div className="tabs"><button className={tab==='collector'?'active':''} onClick={()=>setTab('collector')}>Recolectores <span>{suppliers.filter(x=>x.type==='collector').length}</span></button><button className={tab==='company'?'active':''} onClick={()=>setTab('company')}>Empresas <span>{suppliers.filter(x=>x.type==='company').length}</span></button></div><div className="provider-grid">{filtered.map(p=>{const entries=inventory.filter(x=>x.supplier_id===p.id);return <article className="panel provider-card" key={p.id}><div className="provider-head"><span className={p.type==='company'?'company-icon':'person-icon'}>{p.type==='company'?<Building2/>:<Users/>}</span><div><h3>{p.name}</h3><StatusBadge>{p.active?'Activo':'Inactivo'}</StatusBadge></div><button title="Editar" onClick={()=>setEditing(p)}><Edit3/></button></div><dl><div><dt>Tipo</dt><dd>{providerType(p.type)}</dd></div><div><dt>Teléfono</dt><dd>{p.phone}</dd></div><div><dt>Entregas</dt><dd>{entries.length}</dd></div><div><dt>Peso recibido</dt><dd>{number(entries.reduce((s,x)=>s+asNumber(x.pounds),0))} lb</dd></div><div><dt>Total comprado</dt><dd>{money(entries.reduce((s,x)=>s+asNumber(x.cost_total),0),entries[0]?.currency??'LPS')}</dd></div></dl><div className="card-actions"><Button variant="outline" onClick={()=>void openHistory(p)}><Eye/>Ver historial</Button><Button variant="ghost" onClick={()=>setEditing(p)}>Editar</Button></div></article>})}</div>{!filtered.length&&<section className="panel"><EmptyState message={`No hay ${providerType(tab).toLowerCase()}s registrados.`}/></section>}<section className="panel recent-moves"><div className="section-title"><div><Truck/><div><h2>Movimientos recientes</h2><p>Últimos ingresos de proveedores</p></div></div></div>{inventory.slice(0,6).map(r=><div className="timeline-row" key={r.id}><span className="timeline-icon"><PackageCheck/></span><div><strong>{r.supplier}</strong><small>{providerType(r.supplier_type)}</small></div><p>Ingreso de {number(r.quantity)} {r.unit} de {r.material}</p><time>{formatDate(r.received_at)}</time></div>)}</section>{editing!==undefined&&<SupplierForm supplier={editing??undefined} type={editing?.type??tab} onClose={()=>setEditing(undefined)} notify={notify}/>} {historyOwner&&<Modal title={`Historial de ${historyOwner.name}`} subtitle="Materiales entregados y total comprado" onClose={()=>setHistoryOwner(null)}>{historyLoading?<div className="loading-state"><RefreshCw/>Cargando historial…</div>:history.length?<div className="history-list">{history.map((row,i)=><div key={String(row.inventory_entry_id??i)}><span className="timeline-icon"><Boxes/></span><p><strong>{String(row.material)} · {String(row.category)}</strong><small>{formatDate(String(row.received_at))} · {number(asNumber(row.quantity))} {String(row.unit)}</small></p><b>{money(asNumber(row.cost_total),(row.currency as 'LPS'|'USD')??'LPS')}</b></div>)}</div>:<EmptyState message="Este proveedor todavía no tiene entregas."/>}</Modal>}</>;
+function Supply({ notify }: {
+    notify: (n: Notice) => void;
+}) {
+    const { suppliers, inventory, supplierHistory } = useEconexoData();
+    const [tab, setTab] = useState<'collector' | 'company'>('collector');
+    const [editing, setEditing] = useState<SupplierRecord | null | undefined>();
+    const [historyOwner, setHistoryOwner] = useState<SupplierRecord | null>(null);
+    const [history, setHistory] = useState<Record<string, unknown>[]>([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const filtered = suppliers.filter(x => x.type === tab);
+    const openHistory = async (s: SupplierRecord) => { setHistoryOwner(s); setHistoryLoading(true); try {
+        setHistory(await supplierHistory(s.id));
+    }
+    catch (e) {
+        notify({ message: e instanceof Error ? e.message : 'No se pudo cargar el historial', tone: 'error' });
+    }
+    finally {
+        setHistoryLoading(false);
+    } };
+    return <>
+<PageTitle eyebrow="ORIGEN DEL MATERIAL" title="Cadena de abastecimiento" subtitle="Recolectores y empresas alimentados desde la base de datos." action={<Button size="lg" onClick={() => setEditing(null)}>
+<Plus />Agregar proveedor</Button>}/>
+<div className="tabs">
+<button className={tab === 'collector' ? 'active' : ''} onClick={() => setTab('collector')}>Recolectores <span>{suppliers.filter(x => x.type === 'collector').length}</span>
+</button>
+<button className={tab === 'company' ? 'active' : ''} onClick={() => setTab('company')}>Empresas <span>{suppliers.filter(x => x.type === 'company').length}</span>
+</button>
+</div>
+<div className="provider-grid">{filtered.map(p => { const entries = inventory.filter(x => x.supplier_id === p.id); return <article className="panel provider-card" key={p.id}>
+<div className="provider-head">
+<span className={p.type === 'company' ? 'company-icon' : 'person-icon'}>{p.type === 'company' ? <Building2 /> : <Users />}</span>
+<div>
+<h3>{p.name}</h3>
+<StatusBadge>{p.active ? 'Activo' : 'Inactivo'}</StatusBadge>
+</div>
+<button title="Editar" onClick={() => setEditing(p)}>
+<Edit3 />
+</button>
+</div>
+<dl>
+<div>
+<dt>ID</dt>
+<dd>{supplierDisplayId(p)}</dd>
+</div>
+<div>
+<dt>Tipo</dt>
+<dd>{providerType(p.type)}</dd>
+</div>
+<div>
+<dt>Teléfono</dt>
+<dd>{p.phone}</dd>
+</div>
+<div>
+<dt>Entregas</dt>
+<dd>{entries.length}</dd>
+</div>
+<div>
+<dt>Peso recibido</dt>
+<dd>{number(entries.reduce((s, x) => s + asNumber(x.pounds), 0))} lb</dd>
+</div>
+<div>
+<dt>Total comprado</dt>
+<dd>{money(entries.reduce((s, x) => s + asNumber(x.cost_total), 0), entries[0]?.currency ?? 'LPS')}</dd>
+</div>
+</dl>
+<div className="card-actions">
+<Button variant="outline" onClick={() => void openHistory(p)}>
+<Eye />Ver historial</Button>
+<Button variant="ghost" onClick={() => setEditing(p)}>Editar</Button>
+</div>
+</article>; })}</div>{!filtered.length && <section className="panel">
+<EmptyState message={`No hay ${providerType(tab).toLowerCase()}s registrados.`}/>
+</section>}<section className="panel recent-moves">
+<div className="section-title">
+<div>
+<Truck />
+<div>
+<h2>Movimientos recientes</h2>
+<p>Últimos ingresos de proveedores</p>
+</div>
+</div>
+</div>{inventory.slice(0, 6).map(r => <div className="timeline-row" key={r.id}>
+<span className="timeline-icon">
+<PackageCheck />
+</span>
+<div>
+<strong>{r.supplier}</strong>
+<small>{providerType(r.supplier_type)}</small>
+</div>
+<p>Ingreso de {number(r.quantity)} {r.unit} de {r.material}</p>
+<time>{formatDate(r.received_at)}</time>
+</div>)}</section>{editing !== undefined && <SupplierForm supplier={editing ?? undefined} type={editing?.type ?? tab} onClose={() => setEditing(undefined)} notify={notify}/>} {historyOwner && <Modal title={`Historial de ${historyOwner.name}`} subtitle="Materiales entregados y total comprado" onClose={() => setHistoryOwner(null)}>{historyLoading ? <div className="loading-state">
+<RefreshCw />Cargando historial…</div> : history.length ? <div className="history-list">{history.map((row, i) => <div key={String(row.inventory_entry_id ?? i)}>
+<span className="timeline-icon">
+<Boxes />
+</span>
+<p>
+<strong>{String(row.material)} · {String(row.category)}</strong>
+<small>{formatDate(String(row.received_at))} · {number(asNumber(row.quantity))} {String(row.unit)}</small>
+</p>
+<b>{money(asNumber(row.cost_total), (row.currency as 'LPS' | 'USD') ?? 'LPS')}</b>
+</div>)}</div> : <EmptyState message="Este proveedor todavía no tiene entregas."/>}</Modal>}</>;
 }
-
-function ClientForm({client,onClose,notify}:{client?:ClientRecord;onClose:()=>void;notify:(n:Notice)=>void}){
-  const{materials,categories,saveClient,loading}=useEconexoData();const[name,setName]=useState(client?.name??'');const[type,setType]=useState<'person'|'company'>(client?.type??'person');const[phone,setPhone]=useState(client?.phone??'');const[address,setAddress]=useState(client?.address??'');const[tax,setTax]=useState(client?.tax_or_identity??'');const[notes,setNotes]=useState(client?.notes??'');const[materialIds,setMaterialIds]=useState<string[]>(client?.material_ids??[]);const[categoryIds,setCategoryIds]=useState<string[]>(client?.category_ids??[]);const[errors,setErrors]=useState<Record<string,string>>({});
-  const toggle=(list:string[],id:string,setter:(v:string[])=>void)=>setter(list.includes(id)?list.filter(x=>x!==id):[...list,id]);const submit=async(e:React.FormEvent)=>{e.preventDefault();const next:Record<string,string>={};if(name.trim().length<2)next.name='El nombre debe tener al menos 2 caracteres.';if(phone.trim().length<8)next.phone='El teléfono debe tener al menos 8 caracteres.';if(address.trim().length<4)next.address='La dirección debe tener al menos 4 caracteres.';if(!materialIds.length)next.materials='Selecciona al menos un material.';if(!categoryIds.length)next.categories='Selecciona al menos una categoría.';setErrors(next);if(Object.keys(next).length)return;try{await saveClient({name:name.trim(),type,phone:phone.trim(),address:address.trim(),tax_or_identity:tax||null,notes:notes||null,active:client?.active??true},materialIds,categoryIds,client?.id);notify({message:client?'Cliente actualizado':'Cliente agregado'});onClose()}catch(err){setErrors({form:err instanceof Error?err.message:'No fue posible guardar'})}};
-  return <Modal title={client?'Editar cliente':'Agregar cliente'} onClose={onClose}><form onSubmit={submit} noValidate><div className="form-grid"><label>Nombre<input autoFocus value={name} onChange={e=>setName(e.target.value)}/><FieldError>{errors.name}</FieldError></label><label>Tipo<select value={type} onChange={e=>setType(e.target.value as 'person'|'company')}><option value="person">Persona</option><option value="company">Empresa</option></select></label><label>Teléfono<input value={phone} onChange={e=>setPhone(e.target.value)}/><FieldError>{errors.phone}</FieldError></label><label>RTN / Identificación (opcional)<input value={tax} onChange={e=>setTax(e.target.value)}/></label><label className="full">Dirección<input value={address} onChange={e=>setAddress(e.target.value)}/><FieldError>{errors.address}</FieldError></label><fieldset className="choice-group"><legend>Materiales que compra</legend>{materials.filter(x=>x.active).map(m=><label key={m.id}><input type="checkbox" checked={materialIds.includes(m.id)} onChange={()=>toggle(materialIds,m.id,setMaterialIds)}/>{m.name}</label>)}<FieldError>{errors.materials}</FieldError></fieldset><fieldset className="choice-group"><legend>Categorías</legend>{categories.filter(x=>x.active&&materialIds.includes(x.material_id)).map(c=><label key={c.id}><input type="checkbox" checked={categoryIds.includes(c.id)} onChange={()=>toggle(categoryIds,c.id,setCategoryIds)}/>{c.name}</label>)}<FieldError>{errors.categories}</FieldError></fieldset><label className="full">Observaciones<textarea value={notes} onChange={e=>setNotes(e.target.value)}/></label></div>{errors.form&&<div className="form-error">{errors.form}</div>}<div className="modal-actions"><Button variant="outline" type="button" onClick={onClose}>Cancelar</Button><Button type="submit" disabled={loading}>{loading?'Guardando…':'Guardar cliente'}</Button></div></form></Modal>;
+function ClientForm({ client, onClose, notify }: {
+    client?: ClientRecord;
+    onClose: () => void;
+    notify: (n: Notice) => void;
+}) {
+    const { materials, categories, saveClient, loading } = useEconexoData();
+    const [name, setName] = useState(client?.name ?? '');
+    const [type, setType] = useState<'person' | 'company'>(client?.type ?? 'person');
+    const [phone, setPhone] = useState(client?.phone ?? '');
+    const [address, setAddress] = useState(client?.address ?? '');
+    const [tax, setTax] = useState(client?.tax_or_identity ?? '');
+    const [notes, setNotes] = useState(client?.notes ?? '');
+    const [materialIds, setMaterialIds] = useState<string[]>(client?.material_ids ?? []);
+    const [categoryIds, setCategoryIds] = useState<string[]>(client?.category_ids ?? []);
+    const [errors, setErrors] = useState<Record<string, string>>({});
+    const toggle = (list: string[], id: string, setter: (v: string[]) => void) => setter(list.includes(id) ? list.filter(x => x !== id) : [...list, id]);
+    const submit = async (e: React.FormEvent) => { e.preventDefault(); const next: Record<string, string> = {}; if (name.trim().length < 2)
+        next.name = 'El nombre debe tener al menos 2 caracteres.'; if (phone.trim().length < 8)
+        next.phone = 'El teléfono debe tener al menos 8 caracteres.'; if (address.trim().length < 4)
+        next.address = 'La dirección debe tener al menos 4 caracteres.'; if (!materialIds.length)
+        next.materials = 'Selecciona al menos un material.'; if (!categoryIds.length)
+        next.categories = 'Selecciona al menos una categoría.'; setErrors(next); if (Object.keys(next).length)
+        return; try {
+        await saveClient({ name: name.trim(), type, phone: phone.trim(), address: address.trim(), tax_or_identity: tax || null, notes: notes || null, active: client?.active ?? true }, materialIds, categoryIds, client?.id);
+        notify({ message: client ? 'Cliente actualizado' : 'Cliente agregado' });
+        onClose();
+    }
+    catch (err) {
+        setErrors({ form: err instanceof Error ? err.message : 'No fue posible guardar' });
+    } };
+    return <Modal title={client ? 'Editar cliente' : 'Agregar cliente'} onClose={onClose}>
+<form onSubmit={submit} noValidate>
+<div className="form-grid">
+<label>Nombre<input autoFocus value={name} onChange={e => setName(e.target.value)}/>
+<FieldError>{errors.name}</FieldError>
+</label>
+<label>Tipo<select value={type} onChange={e => setType(e.target.value as 'person' | 'company')}>
+<option value="person">Persona</option>
+<option value="company">Empresa</option>
+</select>
+</label>
+<label>Teléfono<input value={phone} onChange={e => setPhone(e.target.value)}/>
+<FieldError>{errors.phone}</FieldError>
+</label>
+<label>RTN / Identificación (opcional)<input value={tax} onChange={e => setTax(e.target.value)}/>
+</label>
+<label className="full">Dirección<input value={address} onChange={e => setAddress(e.target.value)}/>
+<FieldError>{errors.address}</FieldError>
+</label>
+<fieldset className="choice-group">
+<legend>Materiales que compra</legend>{materials.filter(x => x.active).map(m => <label key={m.id}>
+<input type="checkbox" checked={materialIds.includes(m.id)} onChange={() => toggle(materialIds, m.id, setMaterialIds)}/>{m.name}</label>)}<FieldError>{errors.materials}</FieldError>
+</fieldset>
+<fieldset className="choice-group">
+<legend>Categorías</legend>{categories.filter(x => x.active && materialIds.includes(x.material_id)).map(c => <label key={c.id}>
+<input type="checkbox" checked={categoryIds.includes(c.id)} onChange={() => toggle(categoryIds, c.id, setCategoryIds)}/>{c.name}</label>)}<FieldError>{errors.categories}</FieldError>
+</fieldset>
+<label className="full">Observaciones<textarea value={notes} onChange={e => setNotes(e.target.value)}/>
+</label>
+</div>{errors.form && <div className="form-error">{errors.form}</div>}<div className="modal-actions">
+<Button variant="outline" type="button" onClick={onClose}>Cancelar</Button>
+<Button type="submit" disabled={loading}>{loading ? 'Guardando…' : 'Guardar cliente'}</Button>
+</div>
+</form>
+</Modal>;
 }
-
-function Clients({notify}:{notify:(n:Notice)=>void}){
-  const{clients,materials,categories,clientHistory}=useEconexoData();const[query,setQuery]=useState('');const[editing,setEditing]=useState<ClientRecord|null|undefined>();const[historyOwner,setHistoryOwner]=useState<ClientRecord|null>(null);const[history,setHistory]=useState<Record<string,unknown>[]>([]);const rows=clients.filter(x=>x.name.toLowerCase().includes(query.toLowerCase()));
-  const openHistory=async(c:ClientRecord)=>{setHistoryOwner(c);setHistory([]);try{setHistory(await clientHistory(c.id))}catch(e){notify({message:e instanceof Error?e.message:'No se pudo cargar el historial',tone:'error'})}};
-  const labels=(c:ClientRecord)=>[...(c.material_ids??[]).map(id=>materials.find(x=>x.id===id)?.name),...(c.category_ids??[]).map(id=>categories.find(x=>x.id===id)?.name)].filter(Boolean).join(' · ')||'Sin categorías';
-  return <><PageTitle eyebrow="RELACIONES COMERCIALES" title="Clientes" subtitle="Registros validados, editables y persistidos en Supabase." action={<Button size="lg" onClick={()=>setEditing(null)}><Plus/>Agregar cliente</Button>}/><section className="panel"><div className="toolbar"><label className="search"><Search/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar cliente…"/></label></div>{rows.length?<div className="client-grid">{rows.map(c=><article className="client-card" key={c.id}><div className="client-top"><span className="large-avatar">{initials(c.name)}</span><div><h3>{c.name}</h3><span>{clientType(c.type)}</span></div><button title="Editar" onClick={()=>setEditing(c)}><Edit3/></button></div><div className="client-meta"><span>Teléfono<strong>{c.phone}</strong></span><span>Dirección<strong>{c.address}</strong></span><span>Materiales y categorías<strong>{labels(c)}</strong></span></div><div className="client-foot"><StatusBadge>{c.active?'Activo':'Inactivo'}</StatusBadge><Button variant="outline" size="sm" onClick={()=>void openHistory(c)}><Eye/>Ver historial</Button></div></article>)}</div>:<EmptyState message="No hay clientes que coincidan."/>}</section>{editing!==undefined&&<ClientForm client={editing??undefined} onClose={()=>setEditing(undefined)} notify={notify}/>} {historyOwner&&<Modal title={`Historial de ${historyOwner.name}`} subtitle="Compras realizadas por este cliente" onClose={()=>setHistoryOwner(null)}>{history.length?<div className="history-list">{history.map((row,i)=><div key={String(row.sale_id??i)}><span className="timeline-icon"><ShoppingCart/></span><p><strong>{String(row.material)} · {String(row.category)}</strong><small>{formatDate(String(row.sold_at))} · {number(asNumber(row.quantity))} {String(row.unit)}</small></p><b>{money(asNumber(row.total),(row.currency as 'LPS'|'USD')??'LPS')}</b></div>)}</div>:<EmptyState message="Este cliente todavía no tiene compras registradas."/>}</Modal>}</>;
+function Clients({ notify }: {
+    notify: (n: Notice) => void;
+}) {
+    const { configured, clients, materials, categories, clientHistory } = useEconexoData();
+    const { invoices } = useBilling();
+    const [query, setQuery] = useState('');
+    const [editing, setEditing] = useState<ClientRecord | null | undefined>();
+    const [historyOwner, setHistoryOwner] = useState<ClientRecord | null>(null);
+    const [history, setHistory] = useState<Record<string, unknown>[]>([]);
+    const rows = clients.filter(x => x.name.toLowerCase().includes(query.toLowerCase()));
+    const openHistory = async (c: ClientRecord) => { setHistoryOwner(c); setHistory([]); try {
+        const base = await clientHistory(c.id);
+        const billed = configured ? [] : invoices.filter(invoice => invoice.client_id === c.id && invoice.status !== 'void').flatMap(invoice => invoice.lines.map(line => ({ sale_id: invoice.id, sold_at: invoice.issued_at, material: line.material, category: line.category, quantity: line.quantity, unit: line.unit, total: line.total, currency: invoice.currency })));
+        setHistory([...billed, ...base]);
+    }
+    catch (e) {
+        notify({ message: e instanceof Error ? e.message : 'No se pudo cargar el historial', tone: 'error' });
+    } };
+    const labels = (c: ClientRecord) => [...(c.material_ids ?? []).map(id => materials.find(x => x.id === id)?.name), ...(c.category_ids ?? []).map(id => categories.find(x => x.id === id)?.name)].filter(Boolean).join(' · ') || 'Sin categorías';
+    return <>
+<PageTitle eyebrow="RELACIONES COMERCIALES" title="Clientes" subtitle="Registros validados, editables y persistidos en Supabase." action={<Button size="lg" onClick={() => setEditing(null)}>
+<Plus />Agregar cliente</Button>}/>
+<section className="panel">
+<div className="toolbar">
+<label className="search">
+<Search />
+<input value={query} onChange={e => setQuery(e.target.value)} placeholder="Buscar cliente…"/>
+</label>
+</div>{rows.length ? <div className="client-grid">{rows.map(c => <article className="client-card" key={c.id}>
+<div className="client-top">
+<span className="large-avatar">{initials(c.name)}</span>
+<div>
+<h3>{c.name}</h3>
+<span>{clientType(c.type)} · {clientDisplayId(c)}</span>
+</div>
+<button title="Editar" onClick={() => setEditing(c)}>
+<Edit3 />
+</button>
+</div>
+<div className="client-meta">
+<span>Teléfono<strong>{c.phone}</strong>
+</span>
+<span>Dirección<strong>{c.address}</strong>
+</span>
+<span>Materiales y categorías<strong>{labels(c)}</strong>
+</span>
+</div>
+<div className="client-foot">
+<StatusBadge>{c.active ? 'Activo' : 'Inactivo'}</StatusBadge>
+<Button variant="outline" size="sm" onClick={() => void openHistory(c)}>
+<Eye />Ver historial</Button>
+</div>
+</article>)}</div> : <EmptyState message="No hay clientes que coincidan."/>}</section>{editing !== undefined && <ClientForm client={editing ?? undefined} onClose={() => setEditing(undefined)} notify={notify}/>} {historyOwner && <Modal title={`Historial de ${historyOwner.name}`} subtitle="Compras realizadas por este cliente" onClose={() => setHistoryOwner(null)}>{history.length ? <div className="history-list">{history.map((row, i) => <div key={String(row.sale_id ?? i)}>
+<span className="timeline-icon">
+<ShoppingCart />
+</span>
+<p>
+<strong>{String(row.material)} · {String(row.category)}</strong>
+<small>{formatDate(String(row.sold_at))} · {number(asNumber(row.quantity))} {String(row.unit)}</small>
+</p>
+<b>{money(asNumber(row.total), (row.currency as 'LPS' | 'USD') ?? 'LPS')}</b>
+</div>)}</div> : <EmptyState message="Este cliente todavía no tiene compras registradas."/>}</Modal>}</>;
 }
-
-function Reports({notify}:{notify:(n:Notice)=>void}){
-  const{inventory,suppliers,materials,categories,settings}=useEconexoData();const[type,setType]=useState('Inventario');const[from,setFrom]=useState('');const[to,setTo]=useState('');const[material,setMaterial]=useState('');const[category,setCategory]=useState('');const[supplier,setSupplier]=useState('');const[currency,setCurrency]=useState<'LPS'|'USD'>(settings?.default_currency??'LPS');const[unit,setUnit]=useState<'lb'|'ton'>(settings?.default_weight_unit??'lb');const rate=settings?.usd_to_lps_rate??24.75;
-  const rows=inventory.filter(r=>(!from||r.received_at>=from)&&(!to||r.received_at<=to)&&(!material||r.material_id===material)&&(!category||r.category_id===category)&&(!supplier||r.supplier_id===supplier));const cost=rows.reduce((s,r)=>s+toCurrency(asNumber(r.cost_total),r.currency??'LPS',currency,rate),0);const sale=rows.reduce((s,r)=>s+toCurrency(asNumber(r.estimated_sale),r.currency??'LPS',currency,rate),0);const weight=rows.reduce((s,r)=>s+(unit==='lb'?asNumber(r.pounds):asNumber(r.tons)),0);const grouped=materials.map(m=>({name:m.name,value:rows.filter(r=>r.material_id===m.id).reduce((s,r)=>s+(unit==='lb'?asNumber(r.pounds):asNumber(r.tons)),0)})).filter(x=>x.value>0);const max=Math.max(...grouped.map(x=>x.value),1);
-  const exportCsv=()=>{const header=['ID','Fecha','Material','Categoría','Cantidad','Unidad','Libras','Toneladas','Proveedor','Moneda','Costo total','Venta estimada'];const lines=rows.map(r=>[r.inventory_code,r.received_at,r.material,r.category,r.quantity,r.unit,r.pounds,r.tons,r.supplier,r.currency,r.cost_total,r.estimated_sale].map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(','));const blob=new Blob([`\uFEFF${[header.join(','),...lines].join('\n')}`],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const anchor=document.createElement('a');anchor.href=url;anchor.download=`reporte-${type.toLowerCase()}-${new Date().toISOString().slice(0,10)}.csv`;anchor.click();URL.revokeObjectURL(url);notify({message:'Reporte compatible con Excel descargado'})};
-  return <><PageTitle eyebrow="ANÁLISIS Y RESULTADOS" title="Reportes" subtitle="Los filtros, totales, tabla y exportaciones usan los datos actuales." action={<div className="action-pair"><Button variant="outline" onClick={exportCsv}><Download/>Excel / CSV</Button><Button onClick={()=>window.print()}><Download/>PDF / Imprimir</Button></div>}/><section className="panel report-filters"><div className="report-types">{['Inventario','Compras','Ventas','Ganancias','Proveedores','Movimientos'].map(t=><button className={type===t?'active':''} onClick={()=>setType(t)} key={t}>{t}</button>)}</div><div className="filter-grid"><label>Fecha inicial<input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label>Fecha final<input type="date" value={to} onChange={e=>setTo(e.target.value)}/></label><label>Material<select value={material} onChange={e=>{setMaterial(e.target.value);setCategory('')}}><option value="">Todos</option>{materials.map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label><label>Categoría<select value={category} onChange={e=>setCategory(e.target.value)}><option value="">Todas</option>{categories.filter(x=>!material||x.material_id===material).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label><label>Proveedor<select value={supplier} onChange={e=>setSupplier(e.target.value)}><option value="">Todos</option>{suppliers.map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label><label>Moneda<select value={currency} onChange={e=>setCurrency(e.target.value as 'LPS'|'USD')}><option>LPS</option><option>USD</option></select></label><label>Unidad<select value={unit} onChange={e=>setUnit(e.target.value as 'lb'|'ton')}><option value="lb">lb</option><option value="ton">ton</option></select></label><Button variant="outline" onClick={()=>{setFrom('');setTo('');setMaterial('');setCategory('');setSupplier('')}}>Limpiar filtros</Button></div></section><div className="report-summary"><article><span>Total de movimientos</span><strong>{rows.length}</strong><small>Registros filtrados</small></article><article><span>Peso procesado</span><strong>{number(weight)} {unit}</strong><small>{unit==='lb'?`${number(weight/2000)} ton`:`${number(weight*2000)} lb`}</small></article><article><span>Venta estimada</span><strong>{money(sale,currency)}</strong><small>Tasa {number(rate)}</small></article><article><span>Ganancia estimada</span><strong>{money(sale-cost,currency)}</strong><small>Costo {money(cost,currency)}</small></article></div><section className="report-grid"><article className="panel report-chart"><div className="section-title"><div><FileBarChart/><div><h2>Resumen de {type.toLowerCase()}</h2><p>Distribución por material</p></div></div></div><div className="horizontal-chart">{grouped.map(item=><div key={item.name}><span>{item.name}</span><i><b style={{width:`${item.value/max*100}%`}}/></i><strong>{number(item.value)} {unit}</strong></div>)}{!grouped.length&&<EmptyState message="No hay información para estos filtros."/>}</div></article><article className="panel top-list"><h2>Movimientos filtrados</h2>{rows.slice(0,8).map(r=><div key={r.id}><span className="mini-avatar">{initials(r.material)}</span><p><strong>{r.material} · {r.category}</strong><small>{r.supplier} · {formatDate(r.received_at)}</small></p><b>{number(unit==='lb'?r.pounds:r.tons)} {unit}</b></div>)}</article></section></>;
+function Reports({ notify }: {
+    notify: (n: Notice) => void;
+}) {
+    const { inventory, suppliers, materials, categories, settings } = useEconexoData();
+    const [type, setType] = useState('Inventario');
+    const [from, setFrom] = useState('');
+    const [to, setTo] = useState('');
+    const [material, setMaterial] = useState('');
+    const [category, setCategory] = useState('');
+    const [supplier, setSupplier] = useState('');
+    const [currency, setCurrency] = useState<'LPS' | 'USD'>(settings?.default_currency ?? 'LPS');
+    const [unit, setUnit] = useState<'lb' | 'ton'>(settings?.default_weight_unit ?? 'lb');
+    const rate = settings?.usd_to_lps_rate ?? 24.75;
+    const rows = inventory.filter(r => (!from || r.received_at >= from) && (!to || r.received_at <= to) && (!material || r.material_id === material) && (!category || r.category_id === category) && (!supplier || r.supplier_id === supplier));
+    const cost = rows.reduce((s, r) => s + toCurrency(asNumber(r.cost_total), r.currency ?? 'LPS', currency, rate), 0);
+    const sale = rows.reduce((s, r) => s + toCurrency(asNumber(r.estimated_sale), r.currency ?? 'LPS', currency, rate), 0);
+    const weight = rows.reduce((s, r) => s + (unit === 'lb' ? asNumber(r.pounds) : asNumber(r.tons)), 0);
+    const grouped = materials.map(m => ({ name: m.name, value: rows.filter(r => r.material_id === m.id).reduce((s, r) => s + (unit === 'lb' ? asNumber(r.pounds) : asNumber(r.tons)), 0) })).filter(x => x.value > 0);
+    const max = Math.max(...grouped.map(x => x.value), 1);
+    const exportCsv = () => { const header = ['ID', 'Fecha', 'Material', 'Categoría', 'Cantidad', 'Unidad', 'Libras', 'Toneladas', 'Proveedor', 'Moneda', 'Costo total', 'Venta estimada']; const lines = rows.map(r => [r.inventory_code, r.received_at, r.material, r.category, r.quantity, r.unit, r.pounds, r.tons, r.supplier, r.currency, r.cost_total, r.estimated_sale].map(v => `"${String(v ?? '').replaceAll('"', '""')}"`).join(',')); const blob = new Blob([`\uFEFF${[header.join(','), ...lines].join('\n')}`], { type: 'text/csv;charset=utf-8' }); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `reporte-${type.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`; anchor.click(); URL.revokeObjectURL(url); notify({ message: 'Reporte compatible con Excel descargado' }); };
+    return <>
+<PageTitle eyebrow="ANÁLISIS Y RESULTADOS" title="Reportes" subtitle="Los filtros, totales, tabla y exportaciones usan los datos actuales." action={<div className="action-pair">
+<Button variant="outline" onClick={exportCsv}>
+<Download />Excel / CSV</Button>
+<Button onClick={() => window.print()}>
+<Download />PDF / Imprimir</Button>
+</div>}/>
+<section className="panel report-filters">
+<div className="report-types">{['Inventario', 'Compras', 'Ventas', 'Ganancias', 'Proveedores', 'Movimientos'].map(t => <button className={type === t ? 'active' : ''} onClick={() => setType(t)} key={t}>{t}</button>)}</div>
+<div className="filter-grid">
+<label>Fecha inicial<input type="date" value={from} onChange={e => setFrom(e.target.value)}/>
+</label>
+<label>Fecha final<input type="date" value={to} onChange={e => setTo(e.target.value)}/>
+</label>
+<label>Material<select value={material} onChange={e => { setMaterial(e.target.value); setCategory(''); }}>
+<option value="">Todos</option>{materials.map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select>
+</label>
+<label>Categoría<select value={category} onChange={e => setCategory(e.target.value)}>
+<option value="">Todas</option>{categories.filter(x => !material || x.material_id === material).map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select>
+</label>
+<label>Proveedor<select value={supplier} onChange={e => setSupplier(e.target.value)}>
+<option value="">Todos</option>{suppliers.map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select>
+</label>
+<label>Moneda<select value={currency} onChange={e => setCurrency(e.target.value as 'LPS' | 'USD')}>
+<option>LPS</option>
+<option>USD</option>
+</select>
+</label>
+<label>Unidad<select value={unit} onChange={e => setUnit(e.target.value as 'lb' | 'ton')}>
+<option value="lb">lb</option>
+<option value="ton">ton</option>
+</select>
+</label>
+<Button variant="outline" onClick={() => { setFrom(''); setTo(''); setMaterial(''); setCategory(''); setSupplier(''); }}>Limpiar filtros</Button>
+</div>
+</section>
+<div className="report-summary">
+<article>
+<span>Total de movimientos</span>
+<strong>{rows.length}</strong>
+<small>Registros filtrados</small>
+</article>
+<article>
+<span>Peso procesado</span>
+<strong>{number(weight)} {unit}</strong>
+<small>{unit === 'lb' ? `${number(weight / 2000)} ton` : `${number(weight * 2000)} lb`}</small>
+</article>
+<article>
+<span>Venta estimada</span>
+<strong>{money(sale, currency)}</strong>
+<small>Tasa {number(rate)}</small>
+</article>
+<article>
+<span>Ganancia estimada</span>
+<strong>{money(sale - cost, currency)}</strong>
+<small>Costo {money(cost, currency)}</small>
+</article>
+</div>
+<section className="report-grid">
+<article className="panel report-chart">
+<div className="section-title">
+<div>
+<FileBarChart />
+<div>
+<h2>Resumen de {type.toLowerCase()}</h2>
+<p>Distribución por material</p>
+</div>
+</div>
+</div>
+<div className="horizontal-chart">{grouped.map(item => <div key={item.name}>
+<span>{item.name}</span>
+<i>
+<b style={{ width: `${item.value / max * 100}%` }}/>
+</i>
+<strong>{number(item.value)} {unit}</strong>
+</div>)}{!grouped.length && <EmptyState message="No hay información para estos filtros."/>}</div>
+</article>
+<article className="panel top-list">
+<h2>Movimientos filtrados</h2>{rows.slice(0, 8).map(r => <div key={r.id}>
+<span className="mini-avatar">{initials(r.material)}</span>
+<p>
+<strong>{r.material} · {r.category}</strong>
+<small>{r.supplier} · {formatDate(r.received_at)}</small>
+</p>
+<b>{number(unit === 'lb' ? r.pounds : r.tons)} {unit}</b>
+</div>)}</article>
+</section>
+</>;
 }
-
-function CatalogEditor({kind,item,onClose,notify}:{kind:'material'|'category';item?:MaterialRecord|CategoryRecord;onClose:()=>void;notify:(n:Notice)=>void}){
-  const{materials,saveMaterial,saveCategory,loading}=useEconexoData();const[name,setName]=useState(item?.name??'');const[materialId,setMaterialId]=useState('material_id'in(item??{})?(item as CategoryRecord).material_id:materials[0]?.id??'');const[error,setError]=useState('');const submit=async(e:React.FormEvent)=>{e.preventDefault();if(name.trim().length<2){setError('El nombre debe tener al menos 2 caracteres.');return}try{if(kind==='material')await saveMaterial(name.trim(),item?.id);else await saveCategory(materialId,name.trim(),item?.id);notify({message:`${kind==='material'?'Material':'Categoría'} guardado`});onClose()}catch(err){setError(err instanceof Error?err.message:'No fue posible guardar')}};return <Modal title={`${item?'Editar':'Agregar'} ${kind==='material'?'material':'categoría'}`} onClose={onClose}><form onSubmit={submit}><div className="form-grid">{kind==='category'&&<label>Material<select value={materialId} onChange={e=>setMaterialId(e.target.value)}>{materials.map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label>}<label>Nombre<input autoFocus value={name} onChange={e=>setName(e.target.value)}/></label></div>{error&&<div className="form-error">{error}</div>}<div className="modal-actions"><Button variant="outline" type="button" onClick={onClose}>Cancelar</Button><Button type="submit" disabled={loading}>{loading?'Guardando…':'Guardar'}</Button></div></form></Modal>}
-
-function SettingsView({notify}:{notify:(n:Notice)=>void}){
-  const{settings,materials,categories,profiles,saveSettings,toggleMaterial,toggleCategory,saveProfile,loading}=useEconexoData();const[tab,setTab]=useState('Empresa');const[name,setName]=useState(settings?.name??'EcoNexo Reciclajes');const[logo,setLogo]=useState(settings?.logo_url??'');const[currency,setCurrency]=useState<'LPS'|'USD'>(settings?.default_currency??'LPS');const[rate,setRate]=useState(settings?.usd_to_lps_rate??24.75);const[unit,setUnit]=useState<'lb'|'ton'>(settings?.default_weight_unit??'lb');const[catalog,setCatalog]=useState<{kind:'material'|'category';item?:MaterialRecord|CategoryRecord}|null>(null);const[error,setError]=useState('');
-  const saveCompany=async()=>{if(name.trim().length<2||rate<=0){setError('Ingresa un nombre válido y una tasa mayor que cero.');return}try{await saveSettings({name:name.trim(),logo_url:logo||null,default_currency:currency,usd_to_lps_rate:rate,default_weight_unit:unit});notify({message:'Configuración guardada'})}catch(e){setError(e instanceof Error?e.message:'No fue posible guardar')}};
-  return <><PageTitle eyebrow="ADMINISTRACIÓN" title="Configuración" subtitle="Cambios persistentes para empresa, usuarios y catálogo."/><div className="settings-layout"><aside className="settings-nav">{['Empresa','Usuarios','Materiales y categorías'].map(t=><button className={tab===t?'active':''} onClick={()=>setTab(t)} key={t}>{t==='Empresa'?<Building2/>:t==='Usuarios'?<UserCog/>:<Boxes/>}<span>{t}</span></button>)}</aside><section className="panel settings-content">{tab==='Empresa'&&<><div className="settings-head"><h2>Identidad de la empresa</h2><p>Estos datos se muestran en el menú y se usan como valores predeterminados.</p></div><div className="logo-editor">{logo?<img className="company-logo-preview" src={logo} alt="Logo de la empresa"/>:<span className="brand-mark">{name[0]?.toUpperCase()||'E'}</span>}<div><strong>Logo de la empresa</strong><small>Ingresa una URL pública de imagen.</small></div></div><div className="form-grid"><label>Nombre de la empresa<input value={name} onChange={e=>setName(e.target.value)}/></label><label>URL del logo<input type="url" value={logo} onChange={e=>setLogo(e.target.value)} placeholder="https://…"/></label><label>Moneda predeterminada<select value={currency} onChange={e=>setCurrency(e.target.value as 'LPS'|'USD')}><option>LPS</option><option>USD</option></select></label><label>Tasa LPS / USD<input type="number" min="0.0001" step="0.0001" value={rate} onChange={e=>setRate(Number(e.target.value))}/><small>1 USD = {number(rate,4)} LPS</small></label><label>Unidad predeterminada<select value={unit} onChange={e=>setUnit(e.target.value as 'lb'|'ton')}><option value="lb">Libras (lb)</option><option value="ton">Toneladas (ton)</option></select></label></div>{error&&<div className="form-error">{error}</div>}<div className="settings-save"><Button disabled={loading} onClick={()=>void saveCompany()}><Check/>{loading?'Guardando…':'Guardar cambios'}</Button></div></>}{tab==='Usuarios'&&<><div className="settings-head"><h2>Usuarios y permisos</h2><p>Activa usuarios y cambia su rol. Los usuarios nuevos se crean primero en Supabase Authentication.</p></div><div className="user-list">{profiles.map(p=><div key={p.id}><span className="large-avatar">{initials(p.full_name)}</span><p><strong>{p.full_name}</strong><small>{p.id.slice(0,8)}…</small></p><select className="inline-select" value={p.role} onChange={async e=>{try{await saveProfile(p.id,{role:e.target.value as 'admin'|'employee'});notify({message:'Rol actualizado'})}catch(err){notify({message:err instanceof Error?err.message:'No se pudo actualizar',tone:'error'})}}}><option value="admin">Administrador</option><option value="employee">Empleado</option></select><label className="toggle"><input type="checkbox" checked={p.active} onChange={async e=>{try{await saveProfile(p.id,{active:e.target.checked});notify({message:'Estado actualizado'})}catch(err){notify({message:err instanceof Error?err.message:'No se pudo actualizar',tone:'error'})}}}/><i/></label></div>)}</div><div className="permission-card"><h3>Permisos por rol</h3><div><strong>Dueño / Administrador</strong><p>Dashboard, finanzas, reportes, usuarios y configuración.</p></div><div><strong>Empleado</strong><p>Inventarios, abastecimiento y clientes; sin información financiera global.</p></div></div></>}{tab==='Materiales y categorías'&&<><div className="settings-head row"><div><h2>Materiales y categorías</h2><p>Agrega, edita o cambia el estado del catálogo.</p></div><Button onClick={()=>setCatalog({kind:'material'})}><Plus/>Agregar material</Button></div>{materials.map(m=><article className="material-group" key={m.id}><div><span className="material-icon"><Boxes/></span><h3>{m.name}</h3><StatusBadge>{m.active?'Activo':'Inactivo'}</StatusBadge><button title="Editar material" onClick={()=>setCatalog({kind:'material',item:m})}><Edit3/></button></div><ul>{categories.filter(c=>c.material_id===m.id).map(c=><li key={c.id}><span>{c.name}</span><small>{c.active?'Activa':'Inactiva'}</small><label className="toggle"><input type="checkbox" checked={c.active} onChange={()=>void toggleCategory(c.id,!c.active)}/><i/></label><button title="Editar categoría" onClick={()=>setCatalog({kind:'category',item:c})}><Edit3/></button></li>)}</ul><div className="catalog-actions"><Button variant="ghost" onClick={()=>setCatalog({kind:'category',item:{id:'',material_id:m.id,name:'',active:true}})}><Plus/>Agregar categoría</Button><label className="toggle"><input type="checkbox" checked={m.active} onChange={()=>void toggleMaterial(m.id,!m.active)}/><i/></label></div></article>)}</>}</section></div>{catalog&&<CatalogEditor kind={catalog.kind} item={catalog.item?.id?catalog.item:undefined} onClose={()=>setCatalog(null)} notify={notify}/>}</>;
+function CatalogEditor({ kind, item, onClose, notify }: {
+    kind: 'material' | 'category';
+    item?: MaterialRecord | CategoryRecord;
+    onClose: () => void;
+    notify: (n: Notice) => void;
+}) {
+    const { materials, saveMaterial, saveCategory, loading } = useEconexoData();
+    const [name, setName] = useState(item?.name ?? '');
+    const [materialId, setMaterialId] = useState('material_id' in (item ?? {}) ? (item as CategoryRecord).material_id : materials[0]?.id ?? '');
+    const [error, setError] = useState('');
+    const submit = async (e: React.FormEvent) => { e.preventDefault(); if (name.trim().length < 2) {
+        setError('El nombre debe tener al menos 2 caracteres.');
+        return;
+    } try {
+        if (kind === 'material')
+            await saveMaterial(name.trim(), item?.id);
+        else
+            await saveCategory(materialId, name.trim(), item?.id);
+        notify({ message: `${kind === 'material' ? 'Material' : 'Categoría'} guardado` });
+        onClose();
+    }
+    catch (err) {
+        setError(err instanceof Error ? err.message : 'No fue posible guardar');
+    } };
+    return <Modal title={`${item ? 'Editar' : 'Agregar'} ${kind === 'material' ? 'material' : 'categoría'}`} onClose={onClose}>
+<form onSubmit={submit}>
+<div className="form-grid">{kind === 'category' && <label>Material<select value={materialId} onChange={e => setMaterialId(e.target.value)}>{materials.map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select>
+</label>}<label>Nombre<input autoFocus value={name} onChange={e => setName(e.target.value)}/>
+</label>
+</div>{error && <div className="form-error">{error}</div>}<div className="modal-actions">
+<Button variant="outline" type="button" onClick={onClose}>Cancelar</Button>
+<Button type="submit" disabled={loading}>{loading ? 'Guardando…' : 'Guardar'}</Button>
+</div>
+</form>
+</Modal>;
 }
-
-function EconexoApp(){
-  const{user,profiles,settings,error,loading,refresh,signOut}=useEconexoData();const profile=profiles.find(x=>x.id===user?.id);const isAdmin=profile?.role==='admin';const[view,setView]=useState<View>(isAdmin?'dashboard':'inventarios');const[editingInventory,setEditingInventory]=useState<InventoryRecord|undefined>();const[drawer,setDrawer]=useState(false);const[profileOpen,setProfileOpen]=useState(false);const[notice,setNotice]=useState<Notice|null>(null);const title=useMemo(()=>navItems.find(n=>n.id===view)?.label??'Inventarios',[view]);const company=settings?.name??'EcoNexo Reciclajes';
-  const notify=(next:Notice)=>{setNotice(next);window.setTimeout(()=>setNotice(null),3000)};const go=(id:View)=>{if(!isAdmin&&['dashboard','reportes','configuracion'].includes(id))return;setView(id);setDrawer(false);window.scrollTo({top:0,behavior:'smooth'})};const editInventory=(record?:InventoryRecord)=>{setEditingInventory(record);go('inventario-form')};const nav=<><div className="brand">{settings?.logo_url?<img className="brand-logo" src={settings.logo_url} alt="Logo"/>:<span className="brand-mark">{company[0]?.toUpperCase()}</span>}<div><strong>{company}</strong><small>Sistema empresarial</small></div></div><nav>{navItems.filter(n=>isAdmin||!n.admin).map(({id,label,icon:Icon})=><button className={(view===id||(view==='inventario-form'&&id==='inventarios'))?'nav-item active':'nav-item'} key={id} onClick={()=>go(id)}><Icon/><span>{label}</span></button>)}</nav><div className="sidebar-foot"><PackageCheck/><span><strong>Conectado a Supabase</strong><small>{loading?'Sincronizando…':'Datos actualizados'}</small></span></div></>;
-  return <main className="app-shell"><aside className="sidebar">{nav}</aside><MobileDrawer open={drawer} onClose={()=>setDrawer(false)}>{nav}</MobileDrawer><section className="workspace"><header className="topbar"><Button variant="ghost" size="icon" className="mobile-menu" onClick={()=>setDrawer(true)}><Menu/></Button><div className="mobile-brand"><span className="brand-mark">{company[0]?.toUpperCase()}</span><strong>{company}</strong></div><span className="breadcrumb">Sistema / <strong>{title}</strong></span><div className="topbar-spacer"/><RefreshButton refresh={refresh}/><NotificationBell count={0}/><div className="profile-wrap"><button className="profile" onClick={()=>setProfileOpen(!profileOpen)}><span className="avatar">{initials(profile?.full_name??user?.email??'Usuario')}</span><div><strong>{profile?.full_name??user?.email}</strong><small>{isAdmin?'Administrador':'Empleado'}</small></div><ChevronDown/></button>{profileOpen&&<div className="profile-menu"><p>CUENTA</p><button disabled><UserCog/>{isAdmin?'Administrador':'Empleado'}</button><hr/><button onClick={()=>void signOut()}>Cerrar sesión</button></div>}</div></header><div key={view} className="content page-enter">{error&&<div className="data-error"><strong>Error de sincronización</strong><span>{error}</span><button onClick={()=>void refresh()}>Reintentar</button></div>}{view==='dashboard'&&isAdmin&&<Dashboard/>}{view==='inventarios'&&<Inventory onEdit={editInventory} notify={notify}/>} {view==='inventario-form'&&<InventoryForm record={editingInventory} onBack={()=>go('inventarios')} notify={notify}/>} {view==='abastecimiento'&&<Supply notify={notify}/>} {view==='clientes'&&<Clients notify={notify}/>} {view==='reportes'&&isAdmin&&<Reports notify={notify}/>} {view==='configuracion'&&isAdmin&&<SettingsView notify={notify}/>}</div></section>{notice&&<div className={`toast ${notice.tone==='error'?'toast-error':''}`}><span>{notice.tone==='error'?<X/>:<Check/>}</span>{notice.message}</div>}</main>;
+function SettingsView({ notify }: {
+    notify: (n: Notice) => void;
+}) {
+    const { settings, materials, categories, profiles, saveSettings, toggleMaterial, toggleCategory, saveProfile, loading } = useEconexoData();
+    const [tab, setTab] = useState('Empresa');
+    const [name, setName] = useState(settings?.name ?? 'Gavrion EcoSystems');
+    const [logo, setLogo] = useState(settings?.logo_url ?? '');
+    const [currency, setCurrency] = useState<'LPS' | 'USD'>(settings?.default_currency ?? 'LPS');
+    const [rate, setRate] = useState(settings?.usd_to_lps_rate ?? 24.75);
+    const [unit, setUnit] = useState<'lb' | 'ton'>(settings?.default_weight_unit ?? 'lb');
+    const [fiscalAddress, setFiscalAddress] = useState(settings?.fiscal_address ?? '');
+    const [fiscalPhone, setFiscalPhone] = useState(settings?.fiscal_phone ?? '');
+    const [catalog, setCatalog] = useState<{
+        kind: 'material' | 'category';
+        item?: MaterialRecord | CategoryRecord;
+    } | null>(null);
+    const [error, setError] = useState('');
+    const saveCompany = async () => {
+      if(name.trim().length<2 || !Number.isFinite(rate) || rate<=0 || fiscalAddress.trim().length<4 || fiscalPhone.replace(/\D/g,'').length<8){setError('Ingresa nombre, dirección, teléfono válido y una tasa mayor que cero.');return;}
+      try{await saveSettings({name:name.trim(),logo_url:logo||null,default_currency:currency,usd_to_lps_rate:rate,default_weight_unit:unit,fiscal_address:fiscalAddress.trim(),fiscal_phone:fiscalPhone.trim()});setError('');notify({message:'Identidad de la empresa guardada'});}catch(e){setError(e instanceof Error?e.message:'No fue posible guardar');}
+    };
+    return <>
+<PageTitle eyebrow="ADMINISTRACIÓN" title="Configuración" subtitle="Cambios persistentes para empresa, usuarios y catálogo."/>
+<div className="settings-layout">
+<aside className="settings-nav">{['Empresa', 'Usuarios', 'Materiales y categorías'].map(t => <button aria-label={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)} key={t}>{t === 'Empresa' ? <Building2 /> : t === 'Usuarios' ? <UserCog /> : <Boxes />}<span>{t}</span>
+</button>)}</aside>
+<section className="panel settings-content">{tab === 'Empresa' && <>
+<div className="settings-head">
+<h2>Identidad de la empresa</h2>
+<p>Estos datos se muestran en el menú y se usan como valores predeterminados.</p>
+</div>
+<div className="logo-editor">{logo ? <img className="company-logo-preview" src={logo} alt="Logo de la empresa"/> : <span className="brand-mark">{name[0]?.toUpperCase() || 'E'}</span>}<div>
+<strong>Logo de la empresa</strong>
+<small>Ingresa una URL pública de imagen.</small>
+</div>
+</div>
+<div className="form-grid">
+<label>Dirección de la empresa<input value={fiscalAddress} onChange={e=>setFiscalAddress(e.target.value)}/></label>
+<label>Teléfono de la empresa<input type="tel" value={fiscalPhone} onChange={e=>setFiscalPhone(e.target.value)}/></label>
+<label>Nombre de la empresa<input value={name} onChange={e => setName(e.target.value)}/>
+</label>
+<label>URL del logo<input type="url" value={logo} onChange={e => setLogo(e.target.value)} placeholder="https://…"/>
+</label>
+<label>Moneda predeterminada<select value={currency} onChange={e => setCurrency(e.target.value as 'LPS' | 'USD')}>
+<option>LPS</option>
+<option>USD</option>
+</select>
+</label>
+<label>Tasa LPS / USD<input type="number" min="0.0001" step="0.0001" value={rate} onChange={e => setRate(Number(e.target.value))}/>
+<small>1 USD = {number(rate, 4)} LPS</small>
+</label>
+<label>Unidad predeterminada<select value={unit} onChange={e => setUnit(e.target.value as 'lb' | 'ton')}>
+<option value="lb">Libras (lb)</option>
+<option value="ton">Toneladas (ton)</option>
+</select>
+</label>
+</div>
+{error && <div className="form-error">{error}</div>}<div className="settings-save">
+<Button disabled={loading} onClick={() => void saveCompany()}>
+<Check />{loading ? 'Guardando…' : 'Guardar cambios'}</Button>
+</div>
+</>}{tab === 'Usuarios' && <>
+<div className="settings-head">
+<h2>Usuarios y permisos</h2>
+<p>Activa usuarios y cambia su rol. Los usuarios nuevos se crean primero en Supabase Authentication.</p>
+</div>
+<div className="user-list">{profiles.map(p => <div key={p.id}>
+<span className="large-avatar">{initials(p.full_name)}</span>
+<p>
+<strong>{p.full_name}</strong>
+<small>{p.id.slice(0, 8)}…</small>
+</p>
+<select className="inline-select" value={p.role} onChange={async (e) => { try {
+        await saveProfile(p.id, { role: e.target.value as 'admin' | 'employee' });
+        notify({ message: 'Rol actualizado' });
+    }
+    catch (err) {
+        notify({ message: err instanceof Error ? err.message : 'No se pudo actualizar', tone: 'error' });
+    } }}>
+<option value="admin">Administrador</option>
+<option value="employee">Empleado</option>
+</select>
+<label className="toggle">
+<input type="checkbox" checked={p.active} onChange={async (e) => { try {
+        await saveProfile(p.id, { active: e.target.checked });
+        notify({ message: 'Estado actualizado' });
+    }
+    catch (err) {
+        notify({ message: err instanceof Error ? err.message : 'No se pudo actualizar', tone: 'error' });
+    } }}/>
+<i />
+</label>
+</div>)}</div>
+<div className="permission-card">
+<h3>Permisos por rol</h3>
+<div>
+<strong>Dueño / Administrador</strong>
+<p>Dashboard, finanzas, reportes, usuarios y configuración.</p>
+</div>
+<div>
+<strong>Empleado</strong>
+<p>Inventarios, abastecimiento y clientes; sin información financiera global.</p>
+</div>
+</div>
+</>}{tab === 'Materiales y categorías' && <>
+<div className="settings-head row">
+<div>
+<h2>Materiales y categorías</h2>
+<p>Agrega, edita o cambia el estado del catálogo.</p>
+</div>
+<Button onClick={() => setCatalog({ kind: 'material' })}>
+<Plus />Agregar material</Button>
+</div>{materials.map(m => <article className="material-group" key={m.id}>
+<div>
+<span className="material-icon">
+<Boxes />
+</span>
+<h3>{m.name}</h3>
+<StatusBadge>{m.active ? 'Activo' : 'Inactivo'}</StatusBadge>
+<button title="Editar material" onClick={() => setCatalog({ kind: 'material', item: m })}>
+<Edit3 />
+</button>
+</div>
+<ul>{categories.filter(c => c.material_id === m.id).map(c => <li key={c.id}>
+<span>{c.name}</span>
+<small>{c.active ? 'Activa' : 'Inactiva'}</small>
+<label className="toggle">
+<input type="checkbox" checked={c.active} onChange={() => void toggleCategory(c.id, !c.active)}/>
+<i />
+</label>
+<button title="Editar categoría" onClick={() => setCatalog({ kind: 'category', item: c })}>
+<Edit3 />
+</button>
+</li>)}</ul>
+<div className="catalog-actions">
+<Button variant="ghost" onClick={() => setCatalog({ kind: 'category', item: { id: '', material_id: m.id, name: '', active: true } })}>
+<Plus />Agregar categoría</Button>
+<label className="toggle">
+<input type="checkbox" checked={m.active} onChange={() => void toggleMaterial(m.id, !m.active)}/>
+<i />
+</label>
+</div>
+</article>)}</>}</section>
+</div>{catalog && <CatalogEditor kind={catalog.kind} item={catalog.item?.id ? catalog.item : undefined} onClose={() => setCatalog(null)} notify={notify}/>}</>;
 }
+function EconexoApp() {
+    const { user, profiles, settings, error, loading, refresh, signOut } = useEconexoData();
+    const profile = profiles.find(x => x.id === user?.id);
+    const isAdmin = profile?.role === 'admin';
+    const [view, setView] = useState<View>(isAdmin ? 'dashboard' : 'inventarios');
+    const [editingInventory, setEditingInventory] = useState<InventoryRecord | undefined>();
+    const [drawer, setDrawer] = useState(false);
+    const [profileOpen, setProfileOpen] = useState(false);
+    const [notice, setNotice] = useState<Notice | null>(null);
+    const title = useMemo(() => navItems.find(n => n.id === view)?.label ?? 'Inventarios', [view]);
+    const company = settings?.name ?? 'Gavrion EcoSystems';
+    const notify = (next: Notice) => { setNotice(next); window.setTimeout(() => setNotice(null), 3000); };
+    const go = (id: View) => { if (!isAdmin && ['dashboard', 'facturacion', 'certificados', 'reportes', 'configuracion'].includes(id))
+        return; setView(id); setDrawer(false); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+    const editInventory = (record?: InventoryRecord) => { setEditingInventory(record); go('inventario-form'); };
+    const nav = <>
+<div className="brand">{settings?.logo_url ? <img className="brand-logo" src={settings.logo_url} alt="Logo"/> : <span className="brand-mark">{company[0]?.toUpperCase()}</span>}<div>
+<strong>{company}</strong>
+<small>Sistema empresarial</small>
+</div>
+</div>
+<nav>{navItems.filter(n => isAdmin || !n.admin).map(({ id, label, icon: Icon }) => <button className={(view === id || (view === 'inventario-form' && id === 'inventarios')) ? 'nav-item active' : 'nav-item'} key={id} onClick={() => go(id)}>
+<Icon />
+<span>{label}</span>
+</button>)}</nav>
+<div className="sidebar-foot">
+<PackageCheck />
+<span>
+<strong>Conectado a Supabase</strong>
+<small>{loading ? 'Sincronizando…' : 'Datos actualizados'}</small>
+</span>
+</div>
+</>;
+    return <main className="app-shell">
+<aside className="sidebar">{nav}</aside>
+<MobileDrawer open={drawer} onClose={() => setDrawer(false)}>{nav}</MobileDrawer>
+<section className="workspace">
+<header className="topbar">
+<Button variant="ghost" size="icon" className="mobile-menu" aria-label="Abrir menú" onClick={() => setDrawer(true)}>
+<Menu />
+</Button>
+<div className="mobile-brand">
+<span className="brand-mark">{company[0]?.toUpperCase()}</span>
+<strong>{company}</strong>
+</div>
+<span className="breadcrumb">Sistema / <strong>{title}</strong>
+</span>
+<div className="topbar-spacer"/>
+<RefreshButton refresh={refresh}/>
+<NotificationBell count={0}/>
+<div className="profile-wrap">
+<button className="profile" onClick={() => setProfileOpen(!profileOpen)}>
+<span className="avatar">{initials(profile?.full_name ?? user?.email ?? 'Usuario')}</span>
+<div>
+<strong>{profile?.full_name ?? user?.email}</strong>
+<small>{isAdmin ? 'Administrador' : 'Empleado'}</small>
+</div>
+<ChevronDown />
+</button>{profileOpen && <div className="profile-menu">
+<p>CUENTA</p>
+<button disabled>
+<UserCog />{isAdmin ? 'Administrador' : 'Empleado'}</button>
+<hr />
+<button onClick={() => void signOut()}>Cerrar sesión</button>
+</div>}</div>
+</header>
+<div key={view} className="content page-enter">{error && <div className="data-error">
+<strong>Error de sincronización</strong>
+<span>{error}</span>
+<button onClick={() => void refresh()}>Reintentar</button>
+</div>}{view === 'dashboard' && isAdmin && <Dashboard />}{view === 'inventarios' && <Inventory onEdit={editInventory} notify={notify}/>} {view === 'facturacion' && isAdmin && <WeightTickets notify={(message, tone) => notify({ message, tone })}/>} {view === 'inventario-form' && <InventoryForm record={editingInventory} onBack={() => go('inventarios')} notify={notify}/>} {view === 'abastecimiento' && <Supply notify={notify}/>} {view === 'clientes' && <Clients notify={notify}/>} {view === 'certificados' && isAdmin && <Certificates/>} {view === 'reportes' && isAdmin && <Reports notify={notify}/>} {view === 'configuracion' && isAdmin && <SettingsView notify={notify}/>}</div>
+</section>{notice && <div className={`toast ${notice.tone === 'error' ? 'toast-error' : ''}`}>
+<span>{notice.tone === 'error' ? <X /> : <Check />}</span>{notice.message}</div>}</main>;
+}
+export default function Home() { return <EconexoDataProvider>
+<BillingProvider>
+<AccessGate>
+<EconexoApp />
+</AccessGate>
+</BillingProvider>
+</EconexoDataProvider>; }
 
-export default function Home(){return <EconexoDataProvider><AccessGate><EconexoApp/></AccessGate></EconexoDataProvider>}

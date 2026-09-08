@@ -1,4 +1,19 @@
 /* Mobile and touch refinements shared across the application. */
+.tabs{display:flex;overflow-x:auto;max-width:100%;gap:8px}.tabs button{flex-shrink:0}
+@media(max-width:760px){.settings-nav{display:flex;overflow-x:auto}.settings-nav button{flex-shrink:0;min-width:110px;flex-direction:column;font-size:11px}.settings-nav button span{display:block}}
+.sidebar{height:100dvh;overflow:hidden}
+.sidebar>.brand,.mobile-drawer>.brand{flex-shrink:0}
+.sidebar nav,.mobile-drawer nav{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;align-content:start;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#b9cde4 transparent;padding:2px 4px 16px 0}
+.sidebar nav::-webkit-scrollbar,.mobile-drawer nav::-webkit-scrollbar{width:6px}
+.sidebar nav::-webkit-scrollbar-thumb,.mobile-drawer nav::-webkit-scrollbar-thumb{background:#b9cde4;border-radius:8px}
+.sidebar nav .nav-item,.mobile-drawer nav .nav-item{flex-shrink:0}
+.mobile-drawer{max-height:100dvh;overflow:hidden;padding-bottom:max(16px,env(safe-area-inset-bottom))}
+.panel,.provider-card,.client-card,.settings-content,.weight-editor,.certificate-editor{min-width:0}
+@media(min-width:761px) and (max-width:1100px){
+ .page-title{flex-wrap:wrap}.page-title>div{min-width:0}.page-title>.periods{max-width:100%;flex-wrap:wrap}
+ .settings-layout{grid-template-columns:1fr}.settings-nav{display:flex;flex-wrap:wrap}
+ .provider-grid,.client-grid{grid-template-columns:1fr}
+}
 .periods button{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 .periods button.selected,.periods button.selected:hover,.periods button.selected:focus-visible,.periods button.selected:active{background:#1473e6;color:#fff;box-shadow:0 4px 10px #1473e633}
 .periods button:active{background:#1473e6;color:#fff;transform:scale(.97)}
@@ -11,6 +26,14 @@
 }
 
 @media(max-width:760px){
+  .topbar{gap:8px}.topbar-spacer{min-width:0}.mobile-brand{min-width:0;flex:1}.mobile-brand .brand-mark{flex-shrink:0}.profile{padding-left:0}.topbar>button,.profile-wrap{flex-shrink:0}
+  .mobile-drawer nav .nav-item{min-height:44px}
+  .provider-card dd,.client-top h3,.client-meta strong,.top-list p,.history-list p{min-width:0;overflow-wrap:anywhere}
+  .user-list>div{grid-template-columns:42px minmax(0,1fr) 32px}.user-list .inline-select{grid-column:2;grid-row:2;width:100%;min-height:44px}.user-list .toggle{grid-column:3;grid-row:1}
+  .weight-module,.certificate-module,.weight-workspace,.certificate-workspace,.weight-paper,.certificate-paper{min-width:0;max-width:100%}
+  .weight-editor button,.certificate-module .page-title button{white-space:normal;height:auto;min-height:44px}
+  .horizontal-chart>div{grid-template-columns:minmax(65px,1fr) minmax(30px,1fr) auto}
+  .top-list>div{grid-template-columns:30px minmax(0,1fr)}.top-list>div>b{grid-column:2}
   html,body{max-width:100%;overflow-x:hidden}
   .workspace,.content,.page-title,.page-title>div,.panel,.form-layout,.settings-layout{min-width:0;max-width:100%}
   .content{padding-right:max(16px,env(safe-area-inset-right));padding-left:max(16px,env(safe-area-inset-left));padding-bottom:max(24px,env(safe-area-inset-bottom))}

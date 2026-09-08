@@ -4,6 +4,8 @@ import { Bell, Boxes, Building2, Check, ChevronDown, CircleDollarSign, Clipboard
 import { TableRow, TableAction, TableSkeleton, TableEmpty } from '@/components/table-effects';
 import { BillingProvider, BillingView, useBilling } from '@/components/billing';
 import { supplierDisplayId, clientDisplayId } from '@/lib/party-codes';
+import { AddUser, SupplierCategories } from '@/components/admin-settings';
+import { defaultSupplierCategories, supplierCategoryId } from '@/lib/supplier-categories';
 import { Certificates } from '@/components/certificates';
 import { WeightTickets } from '@/components/weight-tickets';
 import { Button } from '@/components/ui/button';
@@ -17,7 +19,7 @@ type Notice = {
 const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, admin: true },
     { id: 'inventarios', label: 'Inventarios', icon: Boxes, admin: false },
-    { id: 'facturacion', label: 'Boleta de peso', icon: ReceiptText, admin: true },
+    { id: 'facturacion', label: 'Facturación', icon: ReceiptText, admin: true },
     { id: 'abastecimiento', label: 'Cadena de abastecimiento', icon: Truck, admin: false },
     { id: 'clientes', label: 'Clientes', icon: Users, admin: false },
     { id: 'certificados', label: 'Certificados', icon: ClipboardList, admin: true },
@@ -722,11 +724,13 @@ function InventoryForm({ record, onBack, notify }: {
 }
 function SupplierForm({ supplier, type, onClose, notify }: {
     supplier?: SupplierRecord;
-    type: 'collector' | 'company';
+    type: string;
     onClose: () => void;
     notify: (n: Notice) => void;
 }) {
-    const { saveSupplier, loading } = useEconexoData();
+    const { saveSupplier, loading, settings } = useEconexoData();
+    const supplierCategories=settings?.supplier_categories??defaultSupplierCategories;
+    const [categoryId,setCategoryId]=useState(supplier?.category_id??supplier?.type??type);
     const [name, setName] = useState(supplier?.name ?? '');
     const [phone, setPhone] = useState(supplier?.phone ?? '');
     const [idNumber, setIdNumber] = useState(supplier?.identity_number ?? '');
@@ -738,22 +742,23 @@ function SupplierForm({ supplier, type, onClose, notify }: {
         setError('Ingresa un nombre y un teléfono de al menos 8 caracteres.');
         return;
     } try {
-        await saveSupplier({ name: name.trim(), phone: phone.trim(), type, identity_number: idNumber || null, rtn: rtn || null, contact_name: contact || null, address: address || null, active: supplier?.active ?? true }, supplier?.id);
+        await saveSupplier({ name: name.trim(), phone: phone.trim(), type: categoryId==='company'?'company':'collector', category_id:categoryId, identity_number: idNumber || null, rtn: rtn || null, contact_name: contact || null, address: address || null, active: supplier?.active ?? true }, supplier?.id);
         notify({ message: supplier ? 'Proveedor actualizado' : 'Proveedor agregado' });
         onClose();
     }
     catch (err) {
         setError(err instanceof Error ? err.message : 'No fue posible guardar');
     } };
-    return <Modal title={supplier ? 'Editar proveedor' : `Agregar ${providerType(type).toLowerCase()}`} onClose={onClose}>
+    return <Modal title={supplier ? 'Editar proveedor' : 'Agregar proveedor'} onClose={onClose}>
 <form onSubmit={submit}>
 <div className="form-grid">
+<label>Categoría de proveedor<select value={categoryId} onChange={e=>setCategoryId(e.target.value)}>{supplierCategories.filter(c=>c.active||c.id===categoryId).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
 <label>ID del proveedor<input readOnly value={supplier ? supplierDisplayId(supplier) : 'Se asignará automáticamente'}/>
 </label>
-<label>{type === 'company' ? 'Nombre de la empresa' : 'Nombre completo'}<input autoFocus required value={name} onChange={e => setName(e.target.value)}/>
+<label>{categoryId === 'company' ? 'Nombre de la empresa' : 'Nombre completo'}<input autoFocus required value={name} onChange={e => setName(e.target.value)}/>
 </label>
 <label>Teléfono<input required minLength={8} value={phone} onChange={e => setPhone(e.target.value)}/>
-</label>{type === 'company' ? <label>RTN (opcional)<input value={rtn} onChange={e => setRtn(e.target.value)}/>
+</label>{categoryId === 'company' ? <label>RTN (opcional)<input value={rtn} onChange={e => setRtn(e.target.value)}/>
 </label> : <label>Identidad (opcional)<input value={idNumber} onChange={e => setIdNumber(e.target.value)}/>
 </label>}<label>Contacto<input value={contact} onChange={e => setContact(e.target.value)}/>
 </label>
@@ -769,13 +774,14 @@ function SupplierForm({ supplier, type, onClose, notify }: {
 function Supply({ notify }: {
     notify: (n: Notice) => void;
 }) {
-    const { suppliers, inventory, supplierHistory } = useEconexoData();
-    const [tab, setTab] = useState<'collector' | 'company'>('collector');
+    const { suppliers, inventory, supplierHistory,settings } = useEconexoData();
+    const supplierCategories=settings?.supplier_categories??defaultSupplierCategories;
+    const [tab, setTab] = useState<string>('collector');
     const [editing, setEditing] = useState<SupplierRecord | null | undefined>();
     const [historyOwner, setHistoryOwner] = useState<SupplierRecord | null>(null);
     const [history, setHistory] = useState<Record<string, unknown>[]>([]);
     const [historyLoading, setHistoryLoading] = useState(false);
-    const filtered = suppliers.filter(x => x.type === tab);
+    const filtered = suppliers.filter(x => supplierCategoryId(x) === tab);
     const openHistory = async (s: SupplierRecord) => { setHistoryOwner(s); setHistoryLoading(true); try {
         setHistory(await supplierHistory(s.id));
     }
@@ -789,10 +795,7 @@ function Supply({ notify }: {
 <PageTitle eyebrow="ORIGEN DEL MATERIAL" title="Cadena de abastecimiento" subtitle="Recolectores y empresas alimentados desde la base de datos." action={<Button size="lg" onClick={() => setEditing(null)}>
 <Plus />Agregar proveedor</Button>}/>
 <div className="tabs">
-<button className={tab === 'collector' ? 'active' : ''} onClick={() => setTab('collector')}>Recolectores <span>{suppliers.filter(x => x.type === 'collector').length}</span>
-</button>
-<button className={tab === 'company' ? 'active' : ''} onClick={() => setTab('company')}>Empresas <span>{suppliers.filter(x => x.type === 'company').length}</span>
-</button>
+{supplierCategories.filter(c=>c.active||suppliers.some(p=>supplierCategoryId(p)===c.id)).map(c=><button key={c.id} className={tab===c.id?'active':''} onClick={()=>setTab(c.id)}>{c.name}<span>{suppliers.filter(p=>supplierCategoryId(p)===c.id).length}</span></button>)}
 </div>
 <div className="provider-grid">{filtered.map(p => { const entries = inventory.filter(x => x.supplier_id === p.id); return <article className="panel provider-card" key={p.id}>
 <div className="provider-head">
@@ -812,7 +815,7 @@ function Supply({ notify }: {
 </div>
 <div>
 <dt>Tipo</dt>
-<dd>{providerType(p.type)}</dd>
+<dd>{supplierCategories.find(c=>c.id===supplierCategoryId(p))?.name??providerType(p.type)}</dd>
 </div>
 <div>
 <dt>Teléfono</dt>
@@ -837,7 +840,7 @@ function Supply({ notify }: {
 <Button variant="ghost" onClick={() => setEditing(p)}>Editar</Button>
 </div>
 </article>; })}</div>{!filtered.length && <section className="panel">
-<EmptyState message={`No hay ${providerType(tab).toLowerCase()}s registrados.`}/>
+<EmptyState message={`No hay proveedores registrados en esta categoría.`}/>
 </section>}<section className="panel recent-moves">
 <div className="section-title">
 <div>
@@ -857,7 +860,7 @@ function Supply({ notify }: {
 </div>
 <p>Ingreso de {number(r.quantity)} {r.unit} de {r.material}</p>
 <time>{formatDate(r.received_at)}</time>
-</div>)}</section>{editing !== undefined && <SupplierForm supplier={editing ?? undefined} type={editing?.type ?? tab} onClose={() => setEditing(undefined)} notify={notify}/>} {historyOwner && <Modal title={`Historial de ${historyOwner.name}`} subtitle="Materiales entregados y total comprado" onClose={() => setHistoryOwner(null)}>{historyLoading ? <div className="loading-state">
+</div>)}</section>{editing !== undefined && <SupplierForm supplier={editing ?? undefined} type={editing? supplierCategoryId(editing):tab} onClose={() => setEditing(undefined)} notify={notify}/>} {historyOwner && <Modal title={`Historial de ${historyOwner.name}`} subtitle="Materiales entregados y total comprado" onClose={() => setHistoryOwner(null)}>{historyLoading ? <div className="loading-state">
 <RefreshCw />Cargando historial…</div> : history.length ? <div className="history-list">{history.map((row, i) => <div key={String(row.inventory_entry_id ?? i)}>
 <span className="timeline-icon">
 <Boxes />
@@ -1167,9 +1170,9 @@ function SettingsView({ notify }: {
     return <>
 <PageTitle eyebrow="ADMINISTRACIÓN" title="Configuración" subtitle="Cambios persistentes para empresa, usuarios y catálogo."/>
 <div className="settings-layout">
-<aside className="settings-nav">{['Empresa', 'Usuarios', 'Materiales y categorías'].map(t => <button aria-label={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)} key={t}>{t === 'Empresa' ? <Building2 /> : t === 'Usuarios' ? <UserCog /> : <Boxes />}<span>{t}</span>
+<aside className="settings-nav">{['Empresa', 'Usuarios', 'Agregar usuarios', 'Categorías de abastecimiento', 'Materiales y categorías'].map(t => <button aria-label={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)} key={t}>{t === 'Empresa' ? <Building2 /> : t === 'Usuarios' ? <UserCog /> : <Boxes />}<span>{t}</span>
 </button>)}</aside>
-<section className="panel settings-content">{tab === 'Empresa' && <>
+<section className="panel settings-content">{tab === 'Agregar usuarios' && <AddUser/>}{tab === 'Categorías de abastecimiento' && <SupplierCategories/>}{tab === 'Empresa' && <>
 <div className="settings-head">
 <h2>Identidad de la empresa</h2>
 <p>Estos datos se muestran en el menú y se usan como valores predeterminados.</p>
@@ -1207,7 +1210,7 @@ function SettingsView({ notify }: {
 </>}{tab === 'Usuarios' && <>
 <div className="settings-head">
 <h2>Usuarios y permisos</h2>
-<p>Activa usuarios y cambia su rol. Los usuarios nuevos se crean primero en Supabase Authentication.</p>
+<p>Activa usuarios y cambia su rol. Crea nuevos perfiles desde Agregar usuarios.</p>
 </div>
 <div className="user-list">{profiles.map(p => <div key={p.id}>
 <span className="large-avatar">{initials(p.full_name)}</span>

@@ -1,0 +1,12 @@
+'use client';
+import {useEffect,useRef,useState} from 'react';
+import {ChevronDown,Search} from 'lucide-react';
+import type {SupplierRecord} from '@/lib/econexo-data';
+import {supplierDisplayId} from '@/lib/party-codes';
+export function SupplierPicker({suppliers,value,onChange}:{suppliers:SupplierRecord[];value:string;onChange:(id:string)=>void}){
+  const [open,setOpen]=useState(false),[query,setQuery]=useState('');const root=useRef<HTMLDivElement>(null),trigger=useRef<HTMLButtonElement>(null);
+  useEffect(()=>{if(!open)return;const close=(e:PointerEvent)=>{if(!root.current?.contains(e.target as Node))setOpen(false)};document.addEventListener('pointerdown',close);return()=>document.removeEventListener('pointerdown',close)},[open]);
+  const rows=suppliers.filter(p=>(p.name+' '+supplierDisplayId(p)).toLocaleLowerCase('es').includes(query.trim().toLocaleLowerCase('es')));
+  const choose=(id:string)=>{onChange(id);setOpen(false);trigger.current?.focus()};
+  return <div className="supplier-picker" ref={root} onKeyDown={e=>{if(e.key==='Escape'){setOpen(false);trigger.current?.focus()}if(e.key==='ArrowDown'||e.key==='ArrowUp'){const options=Array.from(root.current?.querySelectorAll<HTMLButtonElement>('[role="option"]')??[]);const i=options.indexOf(document.activeElement as HTMLButtonElement);options[(i+(e.key==='ArrowDown'?1:-1)+options.length)%options.length]?.focus();e.preventDefault()}}}><span id="supplier-label">Proveedores</span><button ref={trigger} type="button" aria-labelledby="supplier-label supplier-value" aria-haspopup="listbox" aria-expanded={open} onClick={()=>{setOpen(!open);setQuery('')}}><span id="supplier-value">{suppliers.find(p=>p.id===value)?.name??'Todos los proveedores'}</span><ChevronDown size={16}/></button>{open&&<div className="supplier-popover"><label><Search size={16}/><input autoFocus type="search" aria-label="Buscar en la lista de proveedores" placeholder="Buscar por nombre o código…" value={query} onChange={e=>setQuery(e.target.value)}/></label><div role="listbox" aria-label="Lista de proveedores"><button role="option" aria-selected={!value} onClick={()=>choose('')}>Todos los proveedores</button>{rows.map(p=><button role="option" aria-selected={value===p.id} key={p.id} onClick={()=>choose(p.id)}><strong>{p.name}</strong><small>{supplierDisplayId(p)}{p.active?'':' · Inactivo'}</small></button>)}</div>{!rows.length&&<p role="status">Sin proveedores coincidentes.</p>}</div>}</div>;
+}

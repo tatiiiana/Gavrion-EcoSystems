@@ -4,10 +4,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Eye, Plus, Printer, Scale, Trash2, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useEconexoData } from '@/lib/econexo-data';
+import { materialDisplayId } from '@/lib/code-rules';
 import { supplierDisplayId, clientDisplayId } from '@/lib/party-codes';
 import { createClient } from '@/lib/supabase/client';
 
-type Line = {inventory_id:string;code:string;material:string;bruto:number;tara:number;neto:number;price:number;total:number};
+type Line = {inventory_id:string;material_id?:string;supplier_id?:string;category?:string;code:string;material:string;bruto:number;tara:number;neto:number;cost_per_lb?:number;price:number;total:number};
 type Ticket = {id:string;code:string;kind:'supplier'|'client';party_id:string;party:string;party_code:string;company:string;address:string;phone:string;operator:string;operator_id?:string;logo?:string;entered:string;exited:string;lines:Line[];total:number};
 const key='gavrion-weight-tickets-v1';
 const money=(n:number)=>'L '+n.toLocaleString('es-HN',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -17,7 +18,7 @@ const time=(s:string)=>s?new Date(s).toLocaleTimeString('es-HN',{timeZone:'Ameri
 
 function Paper({ticket}:{ticket:Ticket}){
  return <article className="weight-paper">
- <header>{ticket.logo?<img src={ticket.logo} alt={ticket.company} style={{width:48,height:48,objectFit:'contain',margin:'0 auto'}}/>:<Scale/>}<h2>{ticket.company}</h2><p>Dirección: {ticket.address||'Configura la dirección de la empresa'}</p><p>Teléfono: {ticket.phone||'—'}</p><span>BOLETA DE PESO · {ticket.code}</span></header>
+ <header>{ticket.logo?<img src={ticket.logo} alt={ticket.company} style={{width:48,height:48,objectFit:'contain',margin:'0 auto'}}/>:null}<h2>{ticket.company}</h2><p>Dirección: {ticket.address||'Configura la dirección de la empresa'}</p><p>Teléfono: {ticket.phone||'—'}</p><span>BOLETA DE PESO · {ticket.code}</span></header>
  <div className="weight-dates"><p>Fecha de ingreso: <b>{date(ticket.entered)}</b></p><p>Hora de ingreso: <b>{time(ticket.entered)}</b></p><p>Fecha de salida: <b>{date(ticket.exited)}</b></p><p>Hora de salida: <b>{time(ticket.exited)}</b></p></div>
  <div className="weight-party"><span>Tipo: <b>{ticket.kind==='supplier'?'☑ Proveedor   ☐ Cliente':'☐ Proveedor   ☑ Cliente'}</b></span><span>Nombre: <b>{ticket.party||'Selecciona un registro'}</b></span><span>Código: <b>{ticket.party_code||'—'}</b></span></div>
  <h3>Datos de peso en libras</h3><div className="weight-table-scroll"><table><thead><tr>{['Código','Material','Bruto','Tara','Neto','Precio / lb','Total'].map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{ticket.lines.map((l,i)=><tr key={i}><td>{l.code}</td><td>{l.material}</td><td>{weight(l.bruto)}</td><td>{weight(l.tara)}</td><td><b>{weight(l.neto)}</b></td><td>{money(l.price)}</td><td>{money(l.total)}</td></tr>)}{!ticket.lines.length&&<tr><td colSpan={7} className="weight-empty">Selecciona un material para visualizar el pesaje.</td></tr>}</tbody></table></div>
@@ -27,7 +28,7 @@ function Paper({ticket}:{ticket:Ticket}){
 }
 
 export function WeightTickets({notify}:{notify:(s:string,t?:'success'|'error')=>void}){
- const data=useEconexoData(); const {inventory,suppliers,clients,settings,profiles,user,configured}=data;
+ const data=useEconexoData(); const {inventory,materials,suppliers,clients,settings,profiles,user,configured}=data;
  const [tickets,setTickets]=useState<Ticket[]>([]),[ready,setReady]=useState(false),[editing,setEditing]=useState(false),[selected,setSelected]=useState<Ticket|null>(null);
  const [kind,setKind]=useState<'supplier'|'client'>('supplier'),[partyId,setParty]=useState(''),[entered,setEntered]=useState(''),[draft,setDraft]=useState<{id:string;bruto:string;tara:string}[]>([]);
  const [operatorId,setOperatorId]=useState(user?.id??'');
@@ -35,7 +36,7 @@ export function WeightTickets({notify}:{notify:(s:string,t?:'success'|'error')=>
  useEffect(()=>{let live=true;(async()=>{try{if(configured){const {data,error}=await createClient().from('weight_tickets').select('document').order('created_at',{ascending:false});if(error)throw error;if(live)setTickets((data??[]).map(x=>x.document as Ticket))}else{const saved=localStorage.getItem(key);if(saved&&live)setTickets(JSON.parse(saved))}}catch(e){if(live)setError(e instanceof Error?e.message:'No se pudieron cargar las boletas.')}finally{if(live)setReady(true)}})();return()=>{live=false}},[configured]);
  const parties=kind==='supplier'?suppliers:clients;const party=parties.find(x=>x.id===partyId);
  const available=inventory.filter(x=>kind==='supplier'?x.supplier_id===partyId:x.status==='available'&&x.pounds>0);
- const lines:Line[]=draft.map(d=>{const r=inventory.find(x=>x.id===d.id);const raw=Number(kind==='supplier'?r?.cost_price:r?.sale_price);const price=raw/(r?.unit==='ton'?2000:1)*(r?.currency==='USD'?Number(settings?.usd_to_lps_rate??24.75):1);const bruto=Number(d.bruto),tara=Number(d.tara),neto=Math.max(0,bruto-tara);return{inventory_id:d.id,code:r?.inventory_code??'',material:[r?.material,r?.category].filter(Boolean).join(' · '),bruto,tara,neto,price,total:Math.round(neto*price*100)/100}});
+ const lines:Line[]=draft.map(d=>{const r=inventory.find(x=>x.id===d.id);const raw=Number(kind==='supplier'?r?.cost_price:r?.sale_price);const price=raw/(r?.unit==='ton'?2000:1)*(r?.currency==='USD'?Number(settings?.usd_to_lps_rate??24.75):1);const bruto=Number(d.bruto),tara=Number(d.tara),neto=Math.max(0,bruto-tara);return{inventory_id:d.id,material_id:r?.material_id,supplier_id:r?.supplier_id,category:r?.category,code:materials.find(m=>m.id===r?.material_id)?materialDisplayId(materials.find(m=>m.id===r?.material_id)!):r?.inventory_code??'',material:[r?.material,r?.category].filter(Boolean).join(' · '),bruto,tara,neto,cost_per_lb:Number(r?.cost_price??0)/(r?.unit==='ton'?2000:1)*(r?.currency==='USD'?Number(settings?.usd_to_lps_rate??24.75):1),price,total:Math.round(neto*price*100)/100}});
  const preview:Ticket={id:'preview',code:configured?'Se asigna al emitir':'BP-'+String(Math.max(0,...tickets.map(t=>Number(t.code.replace('BP-',''))||0))+1).padStart(6,'0'),kind,party_id:partyId,party:party?.name??'',party_code:party?(kind==='supplier'?supplierDisplayId(party):clientDisplayId(party)):'',company:settings?.name??'Gavrion EcoSystems',address:settings?.fiscal_address??'',phone:settings?.fiscal_phone??'',logo:settings?.logo_url??'',operator_id:operatorId,operator:profiles.find(x=>x.id===operatorId)?.full_name??'',entered,exited:'',lines,total:lines.reduce((s,l)=>s+l.total,0)};
  const start=()=>{setOperatorId(profiles.find(p=>p.id===user?.id&&p.active)?.id??profiles.find(p=>p.active)?.id??'');setEntered(new Date().toISOString());setDraft([]);setParty('');setError('');setSelected(null);setEditing(true)};
  const emit=async()=>{if(lock.current)return;setError('');if(!profiles.some(p=>p.id===operatorId&&p.active)){setError('Selecciona un responsable activo.');return}if(!party||!lines.length){setError('Selecciona un proveedor o cliente y al menos un material.');return}

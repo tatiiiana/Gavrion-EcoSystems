@@ -6,6 +6,11 @@ import { BillingProvider, BillingView, useBilling } from '@/components/billing';
 import { supplierDisplayId, clientDisplayId } from '@/lib/party-codes';
 import { AddUser, SupplierCategories } from '@/components/admin-settings';
 import { defaultSupplierCategories, supplierCategoryId } from '@/lib/supplier-categories';
+import { CodeSettings } from '@/components/code-settings';
+import { MaterialCatalog } from '@/components/material-catalog';
+import { defaultMaterialGroups, materialGroupId, weightUnitLabel } from '@/lib/material-groups';
+import { FinancialReports } from '@/components/financial-reports';
+import { BusinessDashboard } from '@/components/business-dashboard';
 import { Certificates } from '@/components/certificates';
 import { WeightTickets } from '@/components/weight-tickets';
 import { Button } from '@/components/ui/button';
@@ -20,7 +25,7 @@ const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, admin: true },
     { id: 'inventarios', label: 'Inventarios', icon: Boxes, admin: false },
     { id: 'facturacion', label: 'Facturación', icon: ReceiptText, admin: true },
-    { id: 'abastecimiento', label: 'Cadena de abastecimiento', icon: Truck, admin: false },
+    { id: 'abastecimiento', label: 'Compras', icon: Truck, admin: false },
     { id: 'clientes', label: 'Clientes', icon: Users, admin: false },
     { id: 'certificados', label: 'Certificados', icon: ClipboardList, admin: true },
     { id: 'reportes', label: 'Reportes', icon: FileBarChart, admin: true },
@@ -31,20 +36,20 @@ const number = (value: number, digits = 2) => new Intl.NumberFormat('es-HN', { m
 const money = (value: number | null | undefined, currency: 'LPS' | 'USD' = 'LPS') => value == null ? '—' : new Intl.NumberFormat('es-HN', { style: 'currency', currency, maximumFractionDigits: 2 }).format(value);
 const providerType = (type: string) => type === 'company' ? 'Empresa' : 'Recolector';
 const clientType = (type: string) => type === 'company' ? 'Empresa' : 'Persona';
-const stockStatus = (status: string) => status === 'in_transit' ? 'En tránsito' : status === 'reserved' ? 'Reservado' : 'Disponible';
+const stockStatus = (status: string) => status === 'in_transit' ? 'En proceso' : status === 'reserved' ? 'Reservado' : 'Disponible';
 const initials = (name: string) => name.split(' ').filter(Boolean).map(x => x[0]).slice(0, 2).join('').toUpperCase();
 const asNumber = (value: unknown) => Number(value ?? 0);
 const toCurrency = (amount: number, source: 'LPS' | 'USD', target: 'LPS' | 'USD', rate: number) => source === target ? amount : source === 'USD' ? amount * rate : amount / rate;
 function StatusBadge({ children }: {
     children: React.ReactNode;
-}) { const label = String(children); const tone = label.includes('Disponible') || label.includes('Activo') ? 'success' : label.includes('tránsito') ? 'info' : 'warning'; return <span className={`status ${tone}`}>
+}) { const label = String(children); const tone = label.includes('Disponible') || label.includes('Activo') ? 'success' : label.includes('proceso') ? 'info' : 'warning'; return <span className={`status ${tone}`}>
 <i />{children}</span>; }
 function PageTitle({ eyebrow, title, subtitle, action }: {
     eyebrow: string;
     title: string;
     subtitle: string;
     action?: React.ReactNode;
-}) { const editorial = ['Dashboard', 'Inventarios', 'Cadena de abastecimiento', 'Clientes', 'Reportes', 'Configuración'].includes(title); return <div className={`page-title ${title === 'Inventarios' ? 'inventory-title ' : ''}${editorial ? 'editorial-title' : ''}`}>
+}) { const editorial = ['Dashboard', 'Inventarios', 'Compras', 'Clientes', 'Reportes', 'Configuración'].includes(title); return <div className={`page-title ${title === 'Inventarios' ? 'inventory-title ' : ''}${editorial ? 'editorial-title' : ''}`}>
 <div>
 <p className="eyebrow">{eyebrow}</p>
 <h1>{title}</h1>
@@ -111,166 +116,6 @@ function AccessGate({ children }: {
 </main>;
     return <>{children}</>;
 }
-function Dashboard() {
-    const { inventory, suppliers, clients, settings } = useEconexoData();
-    const { invoices } = useBilling();
-    const [period, setPeriod] = useState('Mensual');
-    const [unit, setUnit] = useState<'lb' | 'ton'>('lb');
-    const [currency, setCurrency] = useState<'LPS' | 'USD'>(settings?.default_currency ?? 'LPS');
-    const rate = settings?.usd_to_lps_rate ?? 24.75;
-    const totalTons = inventory.reduce((sum, row) => sum + asNumber(row.tons), 0);
-    const totals = inventory.reduce((acc, row) => { const source = row.currency ?? 'LPS'; acc.cost += toCurrency(asNumber(row.cost_total), source, currency, rate); acc.sale += toCurrency(asNumber(row.estimated_sale), source, currency, rate); return acc; }, { cost: 0, sale: 0 });
-    const billed = invoices.filter(row => row.status !== 'void').reduce((sum, row) => sum + toCurrency(row.total, row.currency, currency, rate), 0);
-    const status = (key: string) => inventory.filter(x => x.status === key).reduce((sum, x) => sum + asNumber(x.tons), 0);
-    const monthValues = useMemo(() => Array.from({ length: 12 }, (_, i) => { const rows = inventory.filter(x => new Date(`${x.received_at}T12:00:00`).getMonth() === i); const weight = rows.reduce((s, x) => s + (unit === 'lb' ? asNumber(x.pounds) : asNumber(x.tons)), 0); return { month: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'][i], value: weight }; }), [inventory, unit]);
-    const max = Math.max(...monthValues.map(x => x.value), 1);
-    const kpis = [
-        ['Stock actual', number(totalTons), 'ton', 'Datos actuales', Boxes, 'mint'], ['Compras del período', money(totals.cost, currency), period, 'Desde inventario', ShoppingCart, 'blue'],
-        ['Ventas facturadas', money(billed, currency), period, 'Facturación', TrendingUp, 'violet'], ['Ingresos', money(billed, currency), period, 'Facturados', CircleDollarSign, 'cyan'],
-        ['Costos', money(totals.cost, currency), period, 'Registrados', TrendingDown, 'rose'], ['Ganancia estimada', money(totals.sale - totals.cost, currency), 'Margen proyectado', 'Calculada', TrendingUp, 'amber'],
-        ['Proveedores activos', String(suppliers.filter(x => x.active).length), 'registrados', 'Base de datos', Truck, 'sky'], ['Clientes activos', String(clients.filter(x => x.active).length), 'registrados', 'Base de datos', Users, 'pink'],
-    ] as const;
-    return <>
-<PageTitle eyebrow="RESUMEN GENERAL" title="Dashboard" subtitle="Información consolidada directamente desde Supabase." action={<div className="periods">{['Diario', 'Semanal', 'Mensual', 'Trimestral', 'Semestral', 'Anual'].map(p => <button key={p} className={period === p ? 'selected' : ''} onClick={() => setPeriod(p)}>{p}</button>)}</div>}/>
-<section className="kpi-grid">{kpis.map(([label, value, small, change, Icon, tone]) => <article className={`kpi-card ${tone}`} key={label}>
-<div className="kpi-top">
-<span className="icon-box">
-<Icon size={20}/>
-</span>
-<span className="trend">{change}</span>
-</div>
-<p>{label}</p>
-<AnimatedValue value={value}/>
-<small>{small}</small>
-</article>)}</section>
-<section className="dashboard-grid">
-<article className="panel movement-panel">
-<div className="panel-head">
-<div>
-<span className="section-icon">
-<TrendingUp size={20}/>
-</span>
-<h2>Movimientos de inventario</h2>
-<p>Ingresos agrupados por mes</p>
-</div>
-<div className="unit-switch">
-<button className={unit === 'lb' ? 'selected' : ''} onClick={() => setUnit('lb')}>lb</button>
-<button className={unit === 'ton' ? 'selected' : ''} onClick={() => setUnit('ton')}>ton</button>
-</div>
-</div>
-<div className="legend">
-<span>
-<i className="dot blue-dot"/>Entradas</span>
-<span>
-<i className="dot green-dot"/>Disponible</span>
-</div>
-<div className="chart">{monthValues.map(item => <div className="bar-group" key={item.month}>
-<div className="bars">
-<i className="bar buy" title={`${number(item.value)} ${unit}`} style={{ height: `${Math.max(item.value / max * 92, item.value ? 5 : 1)}%` }}/>
-</div>
-<span>{item.month}</span>
-</div>)}</div>
-<p className="chart-note">Valores expresados en {unit === 'lb' ? 'libras' : 'toneladas'}</p>
-</article>
-<div className="side-stack">
-<article className="panel stock-panel">
-<div className="panel-head">
-<div>
-<span className="section-icon green">
-<PackageCheck size={20}/>
-</span>
-<h2>Estado de stock</h2>
-<p>Distribución actual</p>
-</div>
-</div>
-<div className="donut">
-<div>
-<strong>{number(totalTons)}</strong>
-<span>toneladas</span>
-</div>
-</div>
-<ul className="stock-list">
-<li>
-<span>
-<i className="dot green-dot"/>Disponible</span>
-<strong>{number(status('available'))} ton</strong>
-</li>
-<li>
-<span>
-<i className="dot blue-dot"/>En tránsito</span>
-<strong>{number(status('in_transit'))} ton</strong>
-</li>
-<li>
-<span>
-<i className="dot gray-dot"/>Reservado</span>
-<strong>{number(status('reserved'))} ton</strong>
-</li>
-</ul>
-</article>
-<article className="panel finance">
-<div className="panel-head">
-<div>
-<span className="section-icon violet">
-<CircleDollarSign size={20}/>
-</span>
-<h2>Resumen financiero</h2>
-<p>Tasa: 1 USD = {number(rate)} LPS</p>
-</div>
-<select value={currency} onChange={e => setCurrency(e.target.value as 'LPS' | 'USD')}>
-<option>LPS</option>
-<option>USD</option>
-</select>
-</div>
-<dl>
-<div>
-<dt>Total invertido</dt>
-<dd>{money(totals.cost, currency)}</dd>
-</div>
-<div>
-<dt>Total facturado</dt>
-<dd>{money(billed, currency)}</dd>
-</div>
-<div className="profit">
-<dt>Ganancia estimada</dt>
-<dd>{money(totals.sale - totals.cost, currency)}</dd>
-</div>
-</dl>
-</article>
-</div>
-</section>
-<section className="recent-section">
-<div className="section-title">
-<div>
-<ClipboardList />
-<div>
-<h2>Actividades recientes</h2>
-<p>Últimos ingresos registrados</p>
-</div>
-</div>
-</div>
-<div className="activity-grid">
-<article className="panel compact">
-<h3>Inventarios recientes</h3>{inventory.slice(0, 4).map(row => <div className="activity-row" key={row.id}>
-<span className="mini-avatar">{initials(row.material)}</span>
-<div>
-<strong>{row.material} · {row.category}</strong>
-<small>Ingreso de {number(row.quantity)} {row.unit}</small>
-</div>
-<time>{formatDate(row.received_at)}</time>
-</div>)}{!inventory.length && <EmptyState message="Aún no hay inventario."/>}</article>
-<article className="panel compact">
-<h3>Cadena de abastecimiento</h3>{inventory.slice(0, 4).map(row => <div className="activity-row" key={row.id}>
-<span className="mini-avatar greenish">{initials(row.supplier)}</span>
-<div>
-<strong>{row.supplier}</strong>
-<small>{providerType(row.supplier_type)} · {row.material}</small>
-</div>
-<time>{formatDate(row.received_at)}</time>
-</div>)}{!inventory.length && <EmptyState message="Aún no hay entregas."/>}</article>
-</div>
-</section>
-</>;
-}
 function Inventory({ onEdit, notify }: {
     onEdit: (record?: InventoryRecord) => void;
     notify: (n: Notice) => void;
@@ -297,7 +142,7 @@ function Inventory({ onEdit, notify }: {
 </div>
 <div>
 <span>Peso total</span>
-<strong>{number(inventory.reduce((s, r) => s + asNumber(r.tons), 0))} ton</strong>
+<strong>{number(inventory.reduce((s, r) => s + asNumber(r.tons), 0))} toneladas</strong>
 </div>
 <div>
 <span>Valor del stock</span>
@@ -330,12 +175,12 @@ function Inventory({ onEdit, notify }: {
 <small>{r.category}</small>
 </td>
 <td>
-<strong>{number(r.quantity)} {r.unit}</strong>
+<strong>{number(r.quantity)} {weightUnitLabel(r.unit)}</strong>
 <small>Unidad original</small>
 </td>
 <td>
 <span>{number(r.pounds)} lb</span>
-<small>{number(r.tons)} ton</small>
+<small>{number(r.tons)} toneladas</small>
 </td>
 <td>
 <strong>{r.supplier}</strong>
@@ -377,11 +222,11 @@ function Inventory({ onEdit, notify }: {
 </div>
 <div>
 <span>Cantidad original</span>
-<strong>{number(viewing.quantity)} {viewing.unit}</strong>
+<strong>{number(viewing.quantity)} {weightUnitLabel(viewing.unit)}</strong>
 </div>
 <div>
 <span>Conversión</span>
-<strong>{number(viewing.pounds)} lb / {number(viewing.tons)} ton</strong>
+<strong>{number(viewing.pounds)} lb / {number(viewing.tons)} toneladas</strong>
 </div>
 <div>
 <span>Proveedor</span>
@@ -489,19 +334,19 @@ function LegacyInventoryForm({ record, onBack, notify }: {
 </label>
 <label>Unidad<select value={unit} onChange={e => setUnit(e.target.value as 'lb' | 'ton')}>
 <option value="lb">Libras (lb)</option>
-<option value="ton">Toneladas (ton)</option>
+<option value="ton">Toneladas</option>
 </select>
 </label>
 </div>
 <div className="converter">
 <div>
 <span>Cantidad ingresada</span>
-<strong>{number(qty, 4)} {unit}</strong>
+<strong>{number(qty, 4)} {weightUnitLabel(unit)}</strong>
 </div>
 <span className="equals">=</span>
 <div>
 <span>Equivalencia</span>
-<strong>{unit === 'lb' ? `${number(tons, 4)} ton` : `${number(pounds, 4)} lb`}</strong>
+<strong>{unit === 'lb' ? `${number(tons, 4)} toneladas` : `${number(pounds, 4)} lb`}</strong>
 </div>
 <small>1 tonelada = 2,000 libras</small>
 </div>
@@ -516,9 +361,9 @@ function LegacyInventoryForm({ record, onBack, notify }: {
 </label>
 <label>Fecha de ingreso<input type="date" required value={date} onChange={e => setDate(e.target.value)}/>
 </label>
-<label>Precio de costo / {unit}<input type="number" min="0" step="0.0001" value={cost} onChange={e => setCost(Number(e.target.value))}/>
+<label>Precio de costo / {weightUnitLabel(unit)}<input type="number" min="0" step="0.0001" value={cost} onChange={e => setCost(Number(e.target.value))}/>
 </label>
-<label>Precio de venta / {unit}<input type="number" min="0" step="0.0001" value={sale} onChange={e => setSale(Number(e.target.value))}/>
+<label>Precio de venta / {weightUnitLabel(unit)}<input type="number" min="0" step="0.0001" value={sale} onChange={e => setSale(Number(e.target.value))}/>
 </label>
 <label>Moneda<select value={currency} onChange={e => setCurrency(e.target.value as 'LPS' | 'USD')}>
 <option value="LPS">LPS — Lempiras</option>
@@ -538,7 +383,7 @@ function LegacyInventoryForm({ record, onBack, notify }: {
 </div>
 <div>
 <dt>Peso en toneladas</dt>
-<dd>{number(tons, 4)} ton</dd>
+<dd>{number(tons, 4)} toneladas</dd>
 </div>
 <div>
 <dt>Costo total</dt>
@@ -574,6 +419,8 @@ function InventoryForm({ record, onBack, notify }: {
     notify: (n: Notice) => void;
 }) {
     const { materials, categories, suppliers, settings, createInventory, updateInventory, loading } = useEconexoData();
+    const groups=settings?.material_groups??defaultMaterialGroups;
+    const [groupId,setGroupId]=useState(materialGroupId(materials.find(m=>m.id===record?.material_id)??materials.find(m=>m.active)??{name:''}));
     const rate = settings?.usd_to_lps_rate ?? 24.75;
     const [materialId, setMaterialId] = useState(record?.material_id ?? materials.find(x => x.active)?.id ?? '');
     const availableCategories = categories.filter(x => x.material_id === materialId && x.active);
@@ -612,29 +459,30 @@ function InventoryForm({ record, onBack, notify }: {
       <section className="panel form-card">
         <h2>Información del material</h2>
         <div className="form-grid">
-          <label>Material<select required value={materialId} onChange={e => { setMaterialId(e.target.value); setCategoryId(''); }}>
-<option value="">Selecciona</option>{materials.filter(x => x.active).map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select>
+          <label>Categoría principal<select required value={groupId} onChange={e=>{setGroupId(e.target.value);setMaterialId('');setCategoryId('')}}><option value="">Selecciona</option>{groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></label>
+          <label>Tipo de material<select required value={materialId} onChange={e => { setMaterialId(e.target.value); setCategoryId(''); }}>
+<option value="">Selecciona</option>{materials.filter(x => x.active&&(!groupId||materialGroupId(x)===groupId)).map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select>
 </label>
-          <label>Categoría<select required value={categoryId || availableCategories[0]?.id || ''} onChange={e => setCategoryId(e.target.value)}>
+          <label>Clasificación del registro<select required value={categoryId || availableCategories[0]?.id || ''} onChange={e => setCategoryId(e.target.value)}>
 <option value="">Selecciona</option>{availableCategories.map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select>
 </label>
           <label>Cantidad<input type="number" min="0.0001" step="0.0001" value={qty || ''} onChange={e => setQty(Number(e.target.value))} required/>
 </label>
           <label>Unidad<select value={unit} onChange={e => setUnit(e.target.value as 'lb' | 'ton')}>
 <option value="lb">Libras (lb)</option>
-<option value="ton">Toneladas (ton)</option>
+<option value="ton">Toneladas</option>
 </select>
 </label>
         </div>
         <div className="converter">
 <div>
 <span>Cantidad ingresada</span>
-<strong>{number(qty, 4)} {unit}</strong>
+<strong>{number(qty, 4)} {weightUnitLabel(unit)}</strong>
 </div>
 <span className="equals">=</span>
 <div>
 <span>Equivalencia</span>
-<strong>{unit === 'lb' ? `${number(tons, 4)} ton` : `${number(pounds, 4)} lb`}</strong>
+<strong>{unit === 'lb' ? `${number(tons, 4)} toneladas` : `${number(pounds, 4)} lb`}</strong>
 </div>
 <small>Conversión fija: 1 tonelada = 2,000 libras</small>
 </div>
@@ -651,10 +499,10 @@ function InventoryForm({ record, onBack, notify }: {
 </label>
           <label>Estado del inventario<select value={status} onChange={e => setStatus(e.target.value as InventoryRecord['status'])}>
 <option value="available">Disponible</option>
-<option value="in_transit">En tránsito</option>
+<option value="in_transit">En proceso</option>
 <option value="reserved">Reservado</option>
 </select>
-<small>Disponible: listo para vender · En tránsito: pendiente de recepción · Reservado: comprometido con un cliente.</small>
+<small>Disponible: listo para vender · En proceso: material pendiente de clasificación o preparación · Reservado: comprometido con un cliente.</small>
 </label>
         </div>
         <h2>Precios unitarios</h2>
@@ -662,15 +510,15 @@ function InventoryForm({ record, onBack, notify }: {
 <CircleDollarSign />
 <div>
 <strong>¿Cómo se calculan?</strong>
-<p>Ingresa el precio por cada {unit === 'lb' ? 'libra' : 'tonelada'} en {currency}. El sistema multiplica la cantidad original por el precio unitario. Ejemplo: {number(qty)} {unit} × {money(cost, currency)} = {money(totalCost, currency)}.</p>
+<p>Ingresa el precio por cada {unit === 'lb' ? 'libra' : 'tonelada'} en {currency}. El sistema multiplica la cantidad original por el precio unitario. Ejemplo: {number(qty)} {weightUnitLabel(unit)} × {money(cost, currency)} = {money(totalCost, currency)}.</p>
 </div>
 </div>
         <div className="form-grid">
-          <label>Precio de costo por {unit}<input type="number" min="0" step="0.0001" value={cost} onChange={e => setCost(Number(e.target.value))}/>
-<small>Lo que pagas por cada {unit}.</small>
+          <label>Precio de costo por {weightUnitLabel(unit)}<input type="number" min="0" step="0.0001" value={cost} onChange={e => setCost(Number(e.target.value))}/>
+<small>Lo que pagas por cada {weightUnitLabel(unit)}.</small>
 </label>
-          <label>Precio de venta por {unit}<input type="number" min="0" step="0.0001" value={sale} onChange={e => setSale(Number(e.target.value))}/>
-<small>Lo que esperas cobrar por cada {unit}.</small>
+          <label>Precio de venta por {weightUnitLabel(unit)}<input type="number" min="0" step="0.0001" value={sale} onChange={e => setSale(Number(e.target.value))}/>
+<small>Lo que esperas cobrar por cada {weightUnitLabel(unit)}.</small>
 </label>
           <label>Moneda<select value={currency} onChange={e => setCurrency(e.target.value as 'LPS' | 'USD')}>
 <option value="LPS">LPS — Lempiras</option>
@@ -692,7 +540,7 @@ function InventoryForm({ record, onBack, notify }: {
 </div>
 <div>
 <dt>Peso en toneladas</dt>
-<dd>{number(tons, 4)} ton</dd>
+<dd>{number(tons, 4)} toneladas</dd>
 </div>
 <div>
 <dt>Costo total</dt>
@@ -792,7 +640,7 @@ function Supply({ notify }: {
         setHistoryLoading(false);
     } };
     return <>
-<PageTitle eyebrow="ORIGEN DEL MATERIAL" title="Cadena de abastecimiento" subtitle="Recolectores y empresas alimentados desde la base de datos." action={<Button size="lg" onClick={() => setEditing(null)}>
+<PageTitle eyebrow="ORIGEN DEL MATERIAL" title="Compras" subtitle="Recolectores y empresas alimentados desde la base de datos." action={<Button size="lg" onClick={() => setEditing(null)}>
 <Plus />Agregar proveedor</Button>}/>
 <div className="tabs">
 {supplierCategories.filter(c=>c.active||suppliers.some(p=>supplierCategoryId(p)===c.id)).map(c=><button key={c.id} className={tab===c.id?'active':''} onClick={()=>setTab(c.id)}>{c.name}<span>{suppliers.filter(p=>supplierCategoryId(p)===c.id).length}</span></button>)}
@@ -858,7 +706,7 @@ function Supply({ notify }: {
 <strong>{r.supplier}</strong>
 <small>{providerType(r.supplier_type)}</small>
 </div>
-<p>Ingreso de {number(r.quantity)} {r.unit} de {r.material}</p>
+<p>Ingreso de {number(r.quantity)} {weightUnitLabel(r.unit)} de {r.material}</p>
 <time>{formatDate(r.received_at)}</time>
 </div>)}</section>{editing !== undefined && <SupplierForm supplier={editing ?? undefined} type={editing? supplierCategoryId(editing):tab} onClose={() => setEditing(undefined)} notify={notify}/>} {historyOwner && <Modal title={`Historial de ${historyOwner.name}`} subtitle="Materiales entregados y total comprado" onClose={() => setHistoryOwner(null)}>{historyLoading ? <div className="loading-state">
 <RefreshCw />Cargando historial…</div> : history.length ? <div className="history-list">{history.map((row, i) => <div key={String(row.inventory_entry_id ?? i)}>
@@ -867,7 +715,7 @@ function Supply({ notify }: {
 </span>
 <p>
 <strong>{String(row.material)} · {String(row.category)}</strong>
-<small>{formatDate(String(row.received_at))} · {number(asNumber(row.quantity))} {String(row.unit)}</small>
+<small>{formatDate(String(row.received_at))} · {number(asNumber(row.quantity))} {weightUnitLabel(String(row.unit))}</small>
 </p>
 <b>{money(asNumber(row.cost_total), (row.currency as 'LPS' | 'USD') ?? 'LPS')}</b>
 </div>)}</div> : <EmptyState message="Este proveedor todavía no tiene entregas."/>}</Modal>}</>;
@@ -877,7 +725,9 @@ function ClientForm({ client, onClose, notify }: {
     onClose: () => void;
     notify: (n: Notice) => void;
 }) {
-    const { materials, categories, saveClient, loading } = useEconexoData();
+    const { materials, categories, settings, saveClient, loading } = useEconexoData();
+    const [codeGroup,setCodeGroup]=useState(client?.code_group_id??'*');
+    const [documentType, setDocumentType] = useState<'invoice'|'other'>(client?.document_type??'invoice');
     const [name, setName] = useState(client?.name ?? '');
     const [type, setType] = useState<'person' | 'company'>(client?.type ?? 'person');
     const [phone, setPhone] = useState(client?.phone ?? '');
@@ -888,6 +738,9 @@ function ClientForm({ client, onClose, notify }: {
     const [categoryIds, setCategoryIds] = useState<string[]>(client?.category_ids ?? []);
     const [errors, setErrors] = useState<Record<string, string>>({});
     const toggle = (list: string[], id: string, setter: (v: string[]) => void) => setter(list.includes(id) ? list.filter(x => x !== id) : [...list, id]);
+    const activeMaterials = [...new Map(materials.filter(m => m.active).map(m => [m.name.toLocaleLowerCase('es'), m])).values()];
+    const categoryOptions = [...new Map(categories.filter(c => c.active && materialIds.includes(c.material_id)).reduce((map, c) => { const key = c.name.trim().toLocaleLowerCase('es'); const current = map.get(key); map.set(key, { name: c.name, ids: [...(current?.ids ?? []), c.id] }); return map; }, new Map<string, { name: string; ids: string[] }>())).values()];
+    const toggleCategoryGroup = (ids: string[]) => setCategoryIds(categoryIds.some(id => ids.includes(id)) ? categoryIds.filter(id => !ids.includes(id)) : [...new Set([...categoryIds, ...ids])]);
     const submit = async (e: React.FormEvent) => { e.preventDefault(); const next: Record<string, string> = {}; if (name.trim().length < 2)
         next.name = 'El nombre debe tener al menos 2 caracteres.'; if (phone.trim().length < 8)
         next.phone = 'El teléfono debe tener al menos 8 caracteres.'; if (address.trim().length < 4)
@@ -895,7 +748,7 @@ function ClientForm({ client, onClose, notify }: {
         next.materials = 'Selecciona al menos un material.'; if (!categoryIds.length)
         next.categories = 'Selecciona al menos una categoría.'; setErrors(next); if (Object.keys(next).length)
         return; try {
-        await saveClient({ name: name.trim(), type, phone: phone.trim(), address: address.trim(), tax_or_identity: tax || null, notes: notes || null, active: client?.active ?? true }, materialIds, categoryIds, client?.id);
+        await saveClient({ code_group_id:codeGroup, document_type:documentType, name: name.trim(), type, phone: phone.trim(), address: address.trim(), tax_or_identity: tax || null, notes: notes || null, active: client?.active ?? true }, materialIds, categoryIds, client?.id);
         notify({ message: client ? 'Cliente actualizado' : 'Cliente agregado' });
         onClose();
     }
@@ -905,6 +758,8 @@ function ClientForm({ client, onClose, notify }: {
     return <Modal title={client ? 'Editar cliente' : 'Agregar cliente'} onClose={onClose}>
 <form onSubmit={submit} noValidate>
 <div className="form-grid">
+<label>Categoría para código<select value={codeGroup} onChange={e=>setCodeGroup(e.target.value)}><option value="*">General</option>{(settings?.material_groups??defaultMaterialGroups).map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select><small>{client?'Se conserva el código existente: '+clientDisplayId(client):'El código se asigna automáticamente al guardar.'}</small></label>
+<label>Tipo de documento<select value={documentType} onChange={e=>setDocumentType(e.target.value as 'invoice'|'other')}><option value="invoice">Facturas</option><option value="other">Otros</option></select></label>
 <label>Nombre<input autoFocus value={name} onChange={e => setName(e.target.value)}/>
 <FieldError>{errors.name}</FieldError>
 </label>
@@ -922,12 +777,12 @@ function ClientForm({ client, onClose, notify }: {
 <FieldError>{errors.address}</FieldError>
 </label>
 <fieldset className="choice-group">
-<legend>Materiales que compra</legend>{materials.filter(x => x.active).map(m => <label key={m.id}>
-<input type="checkbox" checked={materialIds.includes(m.id)} onChange={() => toggle(materialIds, m.id, setMaterialIds)}/>{m.name}</label>)}<FieldError>{errors.materials}</FieldError>
+<legend>Materiales que compra</legend>{activeMaterials.map(m => <label key={m.id}>
+<input type="checkbox" checked={materialIds.includes(m.id)} onChange={() => { const next = materialIds.includes(m.id) ? materialIds.filter(x => x !== m.id) : [...materialIds, m.id]; setMaterialIds(next); setCategoryIds(categoryIds.filter(id => categories.some(c => c.id === id && next.includes(c.material_id)))); }}/>{m.name}</label>)}{!activeMaterials.length&&<small>No hay materiales activos configurados.</small>}<FieldError>{errors.materials}</FieldError>
 </fieldset>
 <fieldset className="choice-group">
-<legend>Categorías</legend>{categories.filter(x => x.active && materialIds.includes(x.material_id)).map(c => <label key={c.id}>
-<input type="checkbox" checked={categoryIds.includes(c.id)} onChange={() => toggle(categoryIds, c.id, setCategoryIds)}/>{c.name}</label>)}<FieldError>{errors.categories}</FieldError>
+<legend>Categorías</legend>{categoryOptions.map(c => <label key={c.name}>
+<input type="checkbox" checked={c.ids.some(id => categoryIds.includes(id))} onChange={() => toggleCategoryGroup(c.ids)}/>{c.name}</label>)}{materialIds.length>0&&!categoryOptions.length&&<small>No hay categorías activas para los materiales seleccionados.</small>}<FieldError>{errors.categories}</FieldError>
 </fieldset>
 <label className="full">Observaciones<textarea value={notes} onChange={e => setNotes(e.target.value)}/>
 </label>
@@ -982,6 +837,7 @@ function Clients({ notify }: {
 </span>
 <span>Dirección<strong>{c.address}</strong>
 </span>
+<span>Tipo de documento<strong>{c.document_type==='other'?'Otros':'Facturas'}</strong></span>
 <span>Materiales y categorías<strong>{labels(c)}</strong>
 </span>
 </div>
@@ -996,119 +852,10 @@ function Clients({ notify }: {
 </span>
 <p>
 <strong>{String(row.material)} · {String(row.category)}</strong>
-<small>{formatDate(String(row.sold_at))} · {number(asNumber(row.quantity))} {String(row.unit)}</small>
+<small>{formatDate(String(row.sold_at))} · {number(asNumber(row.quantity))} {weightUnitLabel(String(row.unit))}</small>
 </p>
 <b>{money(asNumber(row.total), (row.currency as 'LPS' | 'USD') ?? 'LPS')}</b>
 </div>)}</div> : <EmptyState message="Este cliente todavía no tiene compras registradas."/>}</Modal>}</>;
-}
-function Reports({ notify }: {
-    notify: (n: Notice) => void;
-}) {
-    const { inventory, suppliers, materials, categories, settings } = useEconexoData();
-    const [type, setType] = useState('Inventario');
-    const [from, setFrom] = useState('');
-    const [to, setTo] = useState('');
-    const [material, setMaterial] = useState('');
-    const [category, setCategory] = useState('');
-    const [supplier, setSupplier] = useState('');
-    const [currency, setCurrency] = useState<'LPS' | 'USD'>(settings?.default_currency ?? 'LPS');
-    const [unit, setUnit] = useState<'lb' | 'ton'>(settings?.default_weight_unit ?? 'lb');
-    const rate = settings?.usd_to_lps_rate ?? 24.75;
-    const rows = inventory.filter(r => (!from || r.received_at >= from) && (!to || r.received_at <= to) && (!material || r.material_id === material) && (!category || r.category_id === category) && (!supplier || r.supplier_id === supplier));
-    const cost = rows.reduce((s, r) => s + toCurrency(asNumber(r.cost_total), r.currency ?? 'LPS', currency, rate), 0);
-    const sale = rows.reduce((s, r) => s + toCurrency(asNumber(r.estimated_sale), r.currency ?? 'LPS', currency, rate), 0);
-    const weight = rows.reduce((s, r) => s + (unit === 'lb' ? asNumber(r.pounds) : asNumber(r.tons)), 0);
-    const grouped = materials.map(m => ({ name: m.name, value: rows.filter(r => r.material_id === m.id).reduce((s, r) => s + (unit === 'lb' ? asNumber(r.pounds) : asNumber(r.tons)), 0) })).filter(x => x.value > 0);
-    const max = Math.max(...grouped.map(x => x.value), 1);
-    const exportCsv = () => { const header = ['ID', 'Fecha', 'Material', 'Categoría', 'Cantidad', 'Unidad', 'Libras', 'Toneladas', 'Proveedor', 'Moneda', 'Costo total', 'Venta estimada']; const lines = rows.map(r => [r.inventory_code, r.received_at, r.material, r.category, r.quantity, r.unit, r.pounds, r.tons, r.supplier, r.currency, r.cost_total, r.estimated_sale].map(v => `"${String(v ?? '').replaceAll('"', '""')}"`).join(',')); const blob = new Blob([`\uFEFF${[header.join(','), ...lines].join('\n')}`], { type: 'text/csv;charset=utf-8' }); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `reporte-${type.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`; anchor.click(); URL.revokeObjectURL(url); notify({ message: 'Reporte compatible con Excel descargado' }); };
-    return <>
-<PageTitle eyebrow="ANÁLISIS Y RESULTADOS" title="Reportes" subtitle="Los filtros, totales, tabla y exportaciones usan los datos actuales." action={<div className="action-pair">
-<Button variant="outline" onClick={exportCsv}>
-<Download />Excel / CSV</Button>
-<Button onClick={() => window.print()}>
-<Download />PDF / Imprimir</Button>
-</div>}/>
-<section className="panel report-filters">
-<div className="report-types">{['Inventario', 'Compras', 'Ventas', 'Ganancias', 'Proveedores', 'Movimientos'].map(t => <button className={type === t ? 'active' : ''} onClick={() => setType(t)} key={t}>{t}</button>)}</div>
-<div className="filter-grid">
-<label>Fecha inicial<input type="date" value={from} onChange={e => setFrom(e.target.value)}/>
-</label>
-<label>Fecha final<input type="date" value={to} onChange={e => setTo(e.target.value)}/>
-</label>
-<label>Material<select value={material} onChange={e => { setMaterial(e.target.value); setCategory(''); }}>
-<option value="">Todos</option>{materials.map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select>
-</label>
-<label>Categoría<select value={category} onChange={e => setCategory(e.target.value)}>
-<option value="">Todas</option>{categories.filter(x => !material || x.material_id === material).map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select>
-</label>
-<label>Proveedor<select value={supplier} onChange={e => setSupplier(e.target.value)}>
-<option value="">Todos</option>{suppliers.map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select>
-</label>
-<label>Moneda<select value={currency} onChange={e => setCurrency(e.target.value as 'LPS' | 'USD')}>
-<option>LPS</option>
-<option>USD</option>
-</select>
-</label>
-<label>Unidad<select value={unit} onChange={e => setUnit(e.target.value as 'lb' | 'ton')}>
-<option value="lb">lb</option>
-<option value="ton">ton</option>
-</select>
-</label>
-<Button variant="outline" onClick={() => { setFrom(''); setTo(''); setMaterial(''); setCategory(''); setSupplier(''); }}>Limpiar filtros</Button>
-</div>
-</section>
-<div className="report-summary">
-<article>
-<span>Total de movimientos</span>
-<strong>{rows.length}</strong>
-<small>Registros filtrados</small>
-</article>
-<article>
-<span>Peso procesado</span>
-<strong>{number(weight)} {unit}</strong>
-<small>{unit === 'lb' ? `${number(weight / 2000)} ton` : `${number(weight * 2000)} lb`}</small>
-</article>
-<article>
-<span>Venta estimada</span>
-<strong>{money(sale, currency)}</strong>
-<small>Tasa {number(rate)}</small>
-</article>
-<article>
-<span>Ganancia estimada</span>
-<strong>{money(sale - cost, currency)}</strong>
-<small>Costo {money(cost, currency)}</small>
-</article>
-</div>
-<section className="report-grid">
-<article className="panel report-chart">
-<div className="section-title">
-<div>
-<FileBarChart />
-<div>
-<h2>Resumen de {type.toLowerCase()}</h2>
-<p>Distribución por material</p>
-</div>
-</div>
-</div>
-<div className="horizontal-chart">{grouped.map(item => <div key={item.name}>
-<span>{item.name}</span>
-<i>
-<b style={{ width: `${item.value / max * 100}%` }}/>
-</i>
-<strong>{number(item.value)} {unit}</strong>
-</div>)}{!grouped.length && <EmptyState message="No hay información para estos filtros."/>}</div>
-</article>
-<article className="panel top-list">
-<h2>Movimientos filtrados</h2>{rows.slice(0, 8).map(r => <div key={r.id}>
-<span className="mini-avatar">{initials(r.material)}</span>
-<p>
-<strong>{r.material} · {r.category}</strong>
-<small>{r.supplier} · {formatDate(r.received_at)}</small>
-</p>
-<b>{number(unit === 'lb' ? r.pounds : r.tons)} {unit}</b>
-</div>)}</article>
-</section>
-</>;
 }
 function CatalogEditor({ kind, item, onClose, notify }: {
     kind: 'material' | 'category';
@@ -1170,9 +917,9 @@ function SettingsView({ notify }: {
     return <>
 <PageTitle eyebrow="ADMINISTRACIÓN" title="Configuración" subtitle="Cambios persistentes para empresa, usuarios y catálogo."/>
 <div className="settings-layout">
-<aside className="settings-nav">{['Empresa', 'Usuarios', 'Agregar usuarios', 'Categorías de abastecimiento', 'Materiales y categorías'].map(t => <button aria-label={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)} key={t}>{t === 'Empresa' ? <Building2 /> : t === 'Usuarios' ? <UserCog /> : <Boxes />}<span>{t}</span>
+<aside className="settings-nav">{['Empresa', 'Usuarios', 'Agregar usuarios', 'Categorías de proveedores', 'Materiales y categorías', 'Códigos'].map(t => <button aria-label={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)} key={t}>{t === 'Empresa' ? <Building2 /> : t === 'Usuarios' ? <UserCog /> : <Boxes />}<span>{t}</span>
 </button>)}</aside>
-<section className="panel settings-content">{tab === 'Agregar usuarios' && <AddUser/>}{tab === 'Categorías de abastecimiento' && <SupplierCategories/>}{tab === 'Empresa' && <>
+<section className="panel settings-content">{tab === 'Agregar usuarios' && <AddUser/>}{tab === 'Categorías de proveedores' && <SupplierCategories/>}{tab === 'Empresa' && <>
 <div className="settings-head">
 <h2>Identidad de la empresa</h2>
 <p>Estos datos se muestran en el menú y se usan como valores predeterminados.</p>
@@ -1199,7 +946,7 @@ function SettingsView({ notify }: {
 </label>
 <label>Unidad predeterminada<select value={unit} onChange={e => setUnit(e.target.value as 'lb' | 'ton')}>
 <option value="lb">Libras (lb)</option>
-<option value="ton">Toneladas (ton)</option>
+<option value="ton">Toneladas</option>
 </select>
 </label>
 </div>
@@ -1250,45 +997,7 @@ function SettingsView({ notify }: {
 <p>Inventarios, abastecimiento y clientes; sin información financiera global.</p>
 </div>
 </div>
-</>}{tab === 'Materiales y categorías' && <>
-<div className="settings-head row">
-<div>
-<h2>Materiales y categorías</h2>
-<p>Agrega, edita o cambia el estado del catálogo.</p>
-</div>
-<Button onClick={() => setCatalog({ kind: 'material' })}>
-<Plus />Agregar material</Button>
-</div>{materials.map(m => <article className="material-group" key={m.id}>
-<div>
-<span className="material-icon">
-<Boxes />
-</span>
-<h3>{m.name}</h3>
-<StatusBadge>{m.active ? 'Activo' : 'Inactivo'}</StatusBadge>
-<button title="Editar material" onClick={() => setCatalog({ kind: 'material', item: m })}>
-<Edit3 />
-</button>
-</div>
-<ul>{categories.filter(c => c.material_id === m.id).map(c => <li key={c.id}>
-<span>{c.name}</span>
-<small>{c.active ? 'Activa' : 'Inactiva'}</small>
-<label className="toggle">
-<input type="checkbox" checked={c.active} onChange={() => void toggleCategory(c.id, !c.active)}/>
-<i />
-</label>
-<button title="Editar categoría" onClick={() => setCatalog({ kind: 'category', item: c })}>
-<Edit3 />
-</button>
-</li>)}</ul>
-<div className="catalog-actions">
-<Button variant="ghost" onClick={() => setCatalog({ kind: 'category', item: { id: '', material_id: m.id, name: '', active: true } })}>
-<Plus />Agregar categoría</Button>
-<label className="toggle">
-<input type="checkbox" checked={m.active} onChange={() => void toggleMaterial(m.id, !m.active)}/>
-<i />
-</label>
-</div>
-</article>)}</>}</section>
+</>}{tab === 'Códigos' && <CodeSettings/>}{tab === 'Materiales y categorías' && <MaterialCatalog notify={(message,tone)=>notify({message,tone})}/>}</section>
 </div>{catalog && <CatalogEditor kind={catalog.kind} item={catalog.item?.id ? catalog.item : undefined} onClose={() => setCatalog(null)} notify={notify}/>}</>;
 }
 function EconexoApp() {
@@ -1361,7 +1070,7 @@ function EconexoApp() {
 <strong>Error de sincronización</strong>
 <span>{error}</span>
 <button onClick={() => void refresh()}>Reintentar</button>
-</div>}{view === 'dashboard' && isAdmin && <Dashboard />}{view === 'inventarios' && <Inventory onEdit={editInventory} notify={notify}/>} {view === 'facturacion' && isAdmin && <WeightTickets notify={(message, tone) => notify({ message, tone })}/>} {view === 'inventario-form' && <InventoryForm record={editingInventory} onBack={() => go('inventarios')} notify={notify}/>} {view === 'abastecimiento' && <Supply notify={notify}/>} {view === 'clientes' && <Clients notify={notify}/>} {view === 'certificados' && isAdmin && <Certificates/>} {view === 'reportes' && isAdmin && <Reports notify={notify}/>} {view === 'configuracion' && isAdmin && <SettingsView notify={notify}/>}</div>
+</div>}{view === 'dashboard' && isAdmin && <BusinessDashboard />}{view === 'inventarios' && <Inventory onEdit={editInventory} notify={notify}/>} {view === 'facturacion' && isAdmin && <WeightTickets notify={(message, tone) => notify({ message, tone })}/>} {view === 'inventario-form' && <InventoryForm record={editingInventory} onBack={() => go('inventarios')} notify={notify}/>} {view === 'abastecimiento' && <Supply notify={notify}/>} {view === 'clientes' && <Clients notify={notify}/>} {view === 'certificados' && isAdmin && <Certificates/>} {view === 'reportes' && isAdmin && <FinancialReports notify={(message,tone)=>notify({message,tone})}/>} {view === 'configuracion' && isAdmin && <SettingsView notify={notify}/>}</div>
 </section>{notice && <div className={`toast ${notice.tone === 'error' ? 'toast-error' : ''}`}>
 <span>{notice.tone === 'error' ? <X /> : <Check />}</span>{notice.message}</div>}</main>;
 }

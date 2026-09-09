@@ -7,6 +7,11 @@ import './responsive.css';
 import './billing.css';
 import './weight-tickets.css';
 import './certificates.css';
+import './business-dashboard.css';
+import './financial-reports.css';
+import './dashboard-refinements.css';
+import './executive-reports.css';
+import './report-builder.css';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',

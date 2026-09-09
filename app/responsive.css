@@ -1,4 +1,6 @@
 /* Mobile and touch refinements shared across the application. */
+.tabs{display:flex;overflow-x:auto;max-width:100%;gap:8px}.tabs button{flex-shrink:0}
+@media(max-width:760px){.settings-nav{display:flex;overflow-x:auto}.settings-nav button{flex-shrink:0;min-width:110px;flex-direction:column;font-size:11px}.settings-nav button span{display:block}}
 .sidebar{height:100dvh;overflow:hidden}
 .sidebar>.brand,.mobile-drawer>.brand{flex-shrink:0}
 .sidebar nav,.mobile-drawer nav{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;align-content:start;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#b9cde4 transparent;padding:2px 4px 16px 0}

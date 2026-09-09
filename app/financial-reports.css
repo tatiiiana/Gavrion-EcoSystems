@@ -1,0 +1,24 @@
+.financial-filter-grid{display:grid;grid-template-columns:1fr 1fr 1.6fr 1fr 1fr;gap:14px}
+.financial-filter-grid label,.supplier-picker{display:flex;flex-direction:column;gap:7px;font-size:12px;color:#536783;min-width:0}
+.financial-filter-grid input,.financial-filter-grid select,.supplier-picker>button{min-height:42px;width:100%;border:1px solid #dce6f2;background:#fff;color:#193357;border-radius:9px;padding:9px;font:inherit}
+.supplier-picker{position:relative}.supplier-picker>button{display:flex;align-items:center;justify-content:space-between;text-align:left;gap:8px;cursor:pointer}
+.supplier-popover{position:absolute;top:100%;margin-top:7px;left:0;right:0;min-width:240px;z-index:30;padding:8px;background:white;border:1px solid #dce6f2;border-radius:12px;box-shadow:0 10px 30px #19335715}
+.supplier-popover label{flex-direction:row;align-items:center;gap:6px}.supplier-popover input{min-width:0}
+.supplier-popover [role=listbox]{max-height:240px;overflow-y:auto;margin-top:8px}
+.supplier-popover [role=option]{display:block;border:0;background:white;width:100%;text-align:left;padding:10px;border-radius:7px;color:#193357;cursor:pointer}
+.supplier-popover [role=option]:hover,.supplier-popover [role=option]:focus-visible{background:#f0f6ff}
+.supplier-popover [aria-selected=true]{background:#e9f3ff}.supplier-popover small{display:block;color:#687c98;margin-top:4px}
+.financial-reports .report-filters{overflow:visible}.financial-reports .report-summary{margin:20px 0;grid-template-columns:repeat(4,minmax(0,1fr))}
+.financial-reports .report-summary article{min-width:0}.financial-reports .report-summary strong{overflow-wrap:anywhere}
+.financial-table,.financial-top{margin-top:20px;padding:20px}.financial-reports h2{font-size:17px}.financial-reports .table-wrap{margin-top:16px}
+.financial-reports td,.financial-reports th{white-space:nowrap}.financial-reports tfoot{font-weight:600;background:#f0f6fc}
+.material-comparison{display:grid;grid-template-columns:1.5fr 1fr;gap:20px;margin-top:20px}.material-comparison .panel{padding:20px;min-width:0}.material-comparison h2{font-size:17px}.material-comparison p{color:#687c98;font-size:12px;line-height:1.5}
+.comparison-row{padding:12px 0;border-top:1px solid #edf2f8}.comparison-row>strong,.waste-comparison-row strong{font-size:13px}
+.comparison-row>div{display:grid;grid-template-columns:65px minmax(30px,1fr) 110px;gap:8px;align-items:center;margin-top:8px;font-size:11px}
+.comparison-row small{text-align:right}.comparison-row i,.waste-comparison-row i{height:7px;background:#edf3fa;border-radius:5px;overflow:hidden}
+.comparison-row b,.waste-comparison-row b{height:100%;display:block;border-radius:5px;transition:width 250ms ease}
+.waste-comparison-row{display:grid;grid-template-columns:1fr auto;gap:10px;padding:14px 0;font-size:12px}.waste-comparison-row i{grid-column:1/-1}.waste-comparison-row b{background:#80cfb2}
+@media(max-width:1050px){.financial-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.financial-reports .report-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.material-comparison{grid-template-columns:1fr}}
+@media(max-width:480px){.financial-filter-grid{grid-template-columns:1fr}.supplier-popover{min-width:0}.financial-table,.financial-top,.material-comparison .panel{padding:14px}.comparison-row>div{grid-template-columns:55px minmax(25px,1fr) 105px}.financial-reports .action-pair{flex-wrap:wrap}.financial-reports .report-summary strong{font-size:17px}}
+@media(prefers-reduced-motion:reduce){.comparison-row b,.waste-comparison-row b{transition:none}}
+@media print{.financial-reports .page-title .action-pair,.financial-reports .report-filters{display:none!important}.financial-reports .report-summary{grid-template-columns:repeat(3,1fr)}.financial-reports .table-wrap{overflow:visible}.financial-reports table{min-width:0!important;width:100%;font-size:8px}.financial-reports td,.financial-reports th{white-space:normal;padding:5px!important}.financial-reports .panel{box-shadow:none;break-inside:auto}.financial-reports tr{break-inside:avoid}.financial-reports thead{display:table-header-group}}

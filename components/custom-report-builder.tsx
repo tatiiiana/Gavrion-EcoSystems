@@ -17,7 +17,7 @@ const queries=[
  {id:'profit',label:'¿Cuánto gané?',hint:'Ventas, costos y margen bruto.'},
  {id:'inventory',label:'¿Cuánto inventario me queda?',hint:'Stock actual y disponible para vender.'},
  {id:'purchases',label:'¿Cuánto compré?',hint:'Compras por material en el período.'},
- {id:'top',label:'¿Qué materiales vendí más?',hint:'Los cinco productos más vendidos.'},
+ {id:'top',label:'¿Qué tipos de residuo vendí más?',hint:'Los cinco tipos de residuo más vendidos.'},
 ];
 export function CustomReportBuilder({events,rate,ready=true,notify}:{sections?:ExecutiveSection[];events:BusinessMovement[];currency?:'LPS'|'USD';unit?:'lb'|'ton';rate:number;metadata?:[string,string][];note?:string;ready?:boolean;filterKey?:string;notify:(s:string,t?:'success'|'error')=>void}){
  const {suppliers,settings,inventory,materials}=useEconexoData();

@@ -20,7 +20,22 @@
 .material-metrics .horizontal-chart strong{white-space:normal!important;overflow-wrap:anywhere}
 .material-group>div:has(>h3:first-child){display:flex;justify-content:space-between}
 .material-group>p{padding:0 12px;font-size:12px;color:#677b98}
-.business-kpis .kpi-card:nth-last-child(-n+2){grid-column:span 2}
-@media(max-width:1050px){.business-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.business-kpis .kpi-card:nth-last-child(-n+2){grid-column:auto}}
-@media(max-width:430px){.business-kpis .trend{font-size:9px}.business-kpis .kpi-top{gap:5px;flex-wrap:wrap}.business-kpis .kpi-card>strong{font-size:19px}.material-metrics .horizontal-chart>div{grid-template-columns:75px 1fr 95px}.stock-list li{gap:8px}.stock-list strong{white-space:normal;text-align:right}.settings-head.row{flex-wrap:wrap;gap:12px}}
+.category-stock-panel{margin-top:16px}
+.category-stock-panel .panel-head{margin-bottom:18px}
+.category-stock-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 28px}
+.category-stock-row{display:grid;grid-template-columns:92px minmax(80px,1fr) auto;align-items:center;gap:10px;font-size:11px;color:#334767}
+.category-stock-row>div{height:9px;border-radius:999px;background:#edf2f8;overflow:hidden}
+.category-stock-row i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#1679e8,#35a8f2);transition:width .35s ease}
+.category-stock-row strong{font-size:11px;color:#102e5b;white-space:nowrap}
+.category-stock-section{margin-top:18px}
+.category-stock-heading{display:flex;align-items:baseline;gap:10px;margin:0 0 11px;padding:0 2px}
+.category-stock-heading span{font-size:16px;font-weight:700;color:#132f5d}
+.category-stock-heading small{font-size:11px;color:#7b879d}
+.category-kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:14px}
+.category-kpi-card{min-width:0}
+.category-kpi-card>strong{font-size:24px}
+.entity-kpi-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+@media(max-width:1050px){.business-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){.category-stock-grid{grid-template-columns:1fr;gap:12px}.category-stock-row{grid-template-columns:88px minmax(60px,1fr) auto}.category-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.entity-kpi-grid{grid-template-columns:1fr}}
+@media(max-width:430px){.business-kpis .trend{font-size:9px}.business-kpis .kpi-top{gap:5px;flex-wrap:wrap}.business-kpis .kpi-card>strong{font-size:19px}.material-metrics .horizontal-chart>div{grid-template-columns:75px 1fr 95px}.stock-list li{gap:8px}.stock-list strong{white-space:normal;text-align:right}.settings-head.row{flex-wrap:wrap;gap:12px}.category-stock-row{grid-template-columns:78px minmax(50px,1fr) auto;font-size:10px}.category-stock-row strong{font-size:10px}.category-stock-heading{display:block}.category-stock-heading small{display:block;margin-top:3px}.category-kpi-card>strong{font-size:19px}}
 @media(prefers-reduced-motion:reduce){.business-bar-group i{transition:none}}

@@ -117,3 +117,25 @@
 }
 
 @media (prefers-reduced-motion:reduce) and (hover:none),(prefers-reduced-motion:reduce) and (pointer:coarse){.kpi-card:active,.provider-card:active,.client-card:active,.report-summary article:active,.nav-item:active{transform:none}}
+
+.logo-upload{display:inline-flex!important;align-items:center;justify-content:center;min-height:32px;margin-top:4px;padding:7px 11px;border:1px solid #d7e4f2;border-radius:8px;background:#f4f8fd;color:#176fd4!important;font-size:10px!important;font-weight:700!important;cursor:pointer;transition:background-color 180ms ease,border-color 180ms ease}
+.logo-upload:hover{background:#eaf3ff;border-color:#b9d6f7}
+.logo-upload input[type=file]{position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none}
+@media(prefers-reduced-motion:reduce){.logo-upload{transition:none}}
+
+.platform-brand{display:grid!important;grid-template-columns:1fr;justify-items:center;gap:8px;padding-top:0;text-align:center}
+.platform-logo-frame{width:clamp(150px,80%,180px);max-width:180px;aspect-ratio:814/306;overflow:visible;border-radius:0;background:transparent;box-shadow:none}
+.platform-logo{display:block;width:100%;height:auto;object-fit:contain;object-position:center;image-rendering:auto;filter:drop-shadow(0 5px 12px rgba(23,126,214,.18));transform:translateY(var(--logo-entry-offset,0)) rotate(var(--logo-entry-rotation,0deg));transition:transform 260ms ease,filter 260ms ease;animation:platform-logo-in 900ms cubic-bezier(.22,.8,.28,1) both}
+.platform-brand:hover .platform-logo{transform:translateY(-2px);filter:drop-shadow(0 7px 15px rgba(23,126,214,.26));animation:platform-logo-hover-spin 650ms ease-out both}
+.platform-brand-name{display:block;padding-left:2px;color:#0e2d59;font-size:17px;line-height:1.2;letter-spacing:-.015em;font-weight:700;white-space:nowrap}
+.platform-brand>small{padding-left:2px;color:#73809a;font-size:10px;letter-spacing:.12em;font-weight:600;text-transform:uppercase}
+.platform-login-logo-frame{width:min(100%,300px);aspect-ratio:2.2;overflow:hidden;border-radius:14px;background:#151b22;margin:0 auto 14px;box-shadow:0 10px 24px rgba(16,37,63,.16)}
+.platform-login-logo{display:block;width:100%;height:100%;object-fit:cover;object-position:center;image-rendering:auto;filter:drop-shadow(0 5px 12px rgba(23,126,214,.18));transform:translateY(var(--logo-entry-offset,0)) rotate(var(--logo-entry-rotation,0deg));transition:transform 260ms ease,filter 260ms ease;animation:platform-logo-in 900ms cubic-bezier(.22,.8,.28,1) both}
+.platform-login-logo-frame:hover .platform-login-logo{transform:translateY(-2px);filter:drop-shadow(0 7px 15px rgba(23,126,214,.26));animation:platform-logo-hover-spin 650ms ease-out both}
+.platform-logo-mobile-frame{width:clamp(126px,42vw,170px);aspect-ratio:814/306;overflow:visible;border-radius:0;background:transparent;box-shadow:none}
+.platform-logo-mobile{display:block;width:100%;height:auto;object-fit:contain;object-position:center;image-rendering:auto;filter:drop-shadow(0 3px 8px rgba(23,126,214,.18));transform:translateY(var(--logo-entry-offset,0)) rotate(var(--logo-entry-rotation,0deg));transition:transform 260ms ease,filter 260ms ease;animation:platform-logo-in 900ms cubic-bezier(.22,.8,.28,1) both}
+.platform-logo-mobile-frame:hover .platform-logo-mobile{transform:translateY(-2px);filter:drop-shadow(0 5px 11px rgba(23,126,214,.26));animation:platform-logo-hover-spin 650ms ease-out both}
+@keyframes platform-logo-in{from{opacity:0;--logo-entry-offset:-8px;--logo-entry-rotation:-360deg}to{opacity:1;--logo-entry-offset:0;--logo-entry-rotation:0deg}}
+@keyframes platform-logo-hover-spin{from{transform:translateY(-2px) rotate(0deg)}to{transform:translateY(-2px) rotate(360deg)}}
+@media(max-width:760px){.platform-brand{padding-bottom:22px}.platform-logo-frame{max-width:180px}.platform-logo-mobile-frame{max-width:170px}}
+@media(prefers-reduced-motion:reduce){.platform-logo,.platform-logo-mobile,.platform-login-logo,.platform-brand-name{transition:none;animation:none}.platform-brand:hover .platform-logo,.platform-logo-mobile-frame:hover .platform-logo-mobile,.platform-login-logo-frame:hover .platform-login-logo{transform:none}}

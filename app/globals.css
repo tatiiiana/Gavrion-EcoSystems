@@ -65,3 +65,5 @@ svg{width:18px;height:18px}.sidebar .brand>div{min-width:0}.sidebar .brand stron
 @media(max-width:760px){.editorial-title h1{font-size:28px;line-height:1.18;letter-spacing:-.5px}}
 @media(max-width:390px){.editorial-title h1{font-size:27px}}
 @media(prefers-reduced-motion:reduce){.editorial-title h1{animation:none}}
+.site-footer{padding:0 32px 22px;color:#7b879b;text-align:center;font-size:11px;letter-spacing:.01em}
+@media(max-width:760px){.site-footer{padding:0 18px 16px;font-size:10px}}

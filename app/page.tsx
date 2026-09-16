@@ -17,18 +17,20 @@ import { Button } from '@/components/ui/button';
 import { AnimatedValue, RefreshButton, NotificationBell, MobileDrawer } from '@/components/motion';
 import { EconexoDataProvider, useEconexoData, type CategoryRecord, type ClientRecord, type InventoryRecord, type MaterialRecord, type SupplierRecord, } from '@/lib/econexo-data';
 type View = 'certificados' | 'dashboard' | 'inventarios' | 'inventario-form' | 'facturacion' | 'abastecimiento' | 'clientes' | 'reportes' | 'configuracion';
+const PLATFORM_NAME = 'Gavrion EcoSystems';
+const PLATFORM_LOGO = '/gavrion-ecosystems-logo.png';
 type Notice = {
     message: string;
     tone?: 'success' | 'error';
 };
 const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, admin: true },
-    { id: 'inventarios', label: 'Inventarios', icon: Boxes, admin: false },
-    { id: 'facturacion', label: 'Facturación', icon: ReceiptText, admin: true },
-    { id: 'abastecimiento', label: 'Compras', icon: Truck, admin: false },
-    { id: 'clientes', label: 'Clientes', icon: Users, admin: false },
-    { id: 'certificados', label: 'Certificados', icon: ClipboardList, admin: true },
-    { id: 'reportes', label: 'Reportes', icon: FileBarChart, admin: true },
+    { id: 'inventarios', label: 'Inventario', icon: Boxes, admin: false },
+    { id: 'facturacion', label: 'Boleta de peso', icon: ReceiptText, admin: true },
+    { id: 'certificados', label: 'Certificado', icon: ClipboardList, admin: true },
+    { id: 'abastecimiento', label: 'Generador de residuo', icon: Truck, admin: false },
+    { id: 'clientes', label: 'Cliente', icon: Users, admin: false },
+    { id: 'reportes', label: 'Reportería', icon: FileBarChart, admin: true },
     { id: 'configuracion', label: 'Configuración', icon: Settings, admin: true },
 ] as const;
 const formatDate = (value?: string) => value ? new Intl.DateTimeFormat('es-HN', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(`${value}T12:00:00`)) : '—';
@@ -49,7 +51,7 @@ function PageTitle({ eyebrow, title, subtitle, action }: {
     title: string;
     subtitle: string;
     action?: React.ReactNode;
-}) { const editorial = ['Dashboard', 'Inventarios', 'Compras', 'Clientes', 'Reportes', 'Configuración'].includes(title); return <div className={`page-title ${title === 'Inventarios' ? 'inventory-title ' : ''}${editorial ? 'editorial-title' : ''}`}>
+}) { const editorial = ['Dashboard', 'Inventario', 'Inventarios', 'Compras', 'Generador de residuo', 'Generadores de residuos', 'Generadores de residuos (por proveedores)', 'Cliente', 'Clientes', 'Reportes', 'Reportería', 'Configuración'].includes(title); return <div className={`page-title ${['Inventario', 'Inventarios'].includes(title) ? 'inventory-title ' : ''}${editorial ? 'editorial-title' : ''}`}>
 <div>
 <p className="eyebrow">{eyebrow}</p>
 <h1>{title}</h1>
@@ -104,7 +106,7 @@ function AccessGate({ children }: {
         catch (err) {
             setLocalError(err instanceof Error ? err.message : 'No fue posible iniciar sesión');
         } }}>
-<span className="brand-mark">E</span>
+<div className="platform-login-logo-frame"><img className="platform-login-logo" src={PLATFORM_LOGO} alt={PLATFORM_NAME}/></div>
 <p className="eyebrow">GAVRION ECOSYSTEMS</p>
 <h1>Iniciar sesión</h1>
 <p>Usa un usuario creado en Supabase Authentication.</p>
@@ -133,37 +135,37 @@ function Inventory({ onEdit, notify }: {
     const rows = source.filter(r => [r.inventory_code, r.material, r.category, r.supplier].join(' ').toLowerCase().includes(query.toLowerCase()));
     const stockValue = inventory.reduce((s, r) => s + toCurrency(asNumber(r.cost_total), r.currency ?? 'LPS', settings?.default_currency ?? 'LPS', settings?.usd_to_lps_rate ?? 24.75), 0);
     return <>
-<PageTitle eyebrow="CONTROL DE EXISTENCIAS" title="Inventarios" subtitle="Crea, consulta, edita y elimina registros almacenados en la base de datos." action={<Button size="lg" onClick={() => onEdit()}>
+<PageTitle eyebrow="CONTROL DE EXISTENCIAS" title="Inventarios" subtitle="Crea, consulta, edita y elimina registros de residuos." action={<Button size="lg" onClick={() => onEdit()}>
 <Plus />Agregar inventario</Button>}/>
 <div className="summary-strip">
 <div>
-<span>Registros activos</span>
-<strong>{inventory.length}</strong>
+<span>Tipo de residuos</span>
+<strong>{materials.filter(x => x.active).length} activos</strong>
 </div>
 <div>
-<span>Peso total</span>
+<span>Inventario inicial (T)</span>
 <strong>{number(inventory.reduce((s, r) => s + asNumber(r.tons), 0))} toneladas</strong>
 </div>
 <div>
-<span>Valor del stock</span>
-<strong>{money(stockValue, settings?.default_currency ?? 'LPS')}</strong>
+<span>Inventario final (T)</span>
+<strong>{number(inventory.reduce((s, r) => s + asNumber(r.tons), 0))} toneladas</strong>
 </div>
 <div>
-<span>Materiales</span>
-<strong>{materials.filter(x => x.active).length} activos</strong>
+<span>Valor de Inventario (L)</span>
+<strong>{money(stockValue, 'LPS')}</strong>
 </div>
 </div>
 <section className="panel table-panel">
 <div className="toolbar">
 <label className="search">
 <Search />
-<input placeholder="Buscar material, proveedor o ID…" value={query} onChange={e => setQuery(e.target.value)}/>
+<input placeholder="Buscar residuo, proveedor o ID…" value={query} onChange={e => setQuery(e.target.value)}/>
 </label>
 </div>
 <div className="table-wrap fluid-table" role="region" aria-label="Inventarios" tabIndex={0} aria-busy={loading && !deleting}>
 <table>
 <thead>
-<tr>{['ID / Fecha', 'Material / Categoría', 'Cantidad', 'Equivalencias', 'Proveedor', 'Costo / Venta', 'Moneda', 'Estado', 'Acciones'].map(h => <th scope="col" key={h}>{h}</th>)}</tr>
+<tr>{['ID / Fecha', 'Residuo / Categoría', 'Peso', 'Equivalencias', 'Generador', 'Costo / Venta', 'Moneda', 'Estado', 'Acciones'].map(h => <th scope="col" key={h}>{h}</th>)}</tr>
 </thead>
 <tbody>{loading && !deleting ? <TableSkeleton columns={9}/> : rows.length ? rows.map((r, index) => <TableRow key={r.id} id={r.id} index={index} exiting={deleteSucceeded && deleting?.id === r.id}>
 <td>
@@ -457,13 +459,13 @@ function InventoryForm({ record, onBack, notify }: {
     <PageTitle eyebrow={record ? 'ACTUALIZAR EXISTENCIA' : 'NUEVA ENTRADA'} title={record ? 'Editar inventario' : 'Agregar inventario'} subtitle="Registra el peso, origen, estado y precios unitarios del material." action={<Button variant="outline" onClick={onBack}>Volver al inventario</Button>}/>
     <form className="form-layout" onSubmit={submit}>
       <section className="panel form-card">
-        <h2>Información del material</h2>
+        <h2>Información del residuo</h2>
         <div className="form-grid">
           <label>Categoría principal<select required value={groupId} onChange={e=>{setGroupId(e.target.value);setMaterialId('');setCategoryId('')}}><option value="">Selecciona</option>{groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></label>
-          <label>Tipo de material<select required value={materialId} onChange={e => { setMaterialId(e.target.value); setCategoryId(''); }}>
+          <label>Tipo de residuo<select required value={materialId} onChange={e => { setMaterialId(e.target.value); setCategoryId(''); }}>
 <option value="">Selecciona</option>{materials.filter(x => x.active&&(!groupId||materialGroupId(x)===groupId)).map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select>
 </label>
-          <label>Clasificación del registro<select required value={categoryId || availableCategories[0]?.id || ''} onChange={e => setCategoryId(e.target.value)}>
+          <label>Categoría<select required value={categoryId || availableCategories[0]?.id || ''} onChange={e => setCategoryId(e.target.value)}>
 <option value="">Selecciona</option>{availableCategories.map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select>
 </label>
           <label>Cantidad<input type="number" min="0.0001" step="0.0001" value={qty || ''} onChange={e => setQty(Number(e.target.value))} required/>
@@ -488,7 +490,7 @@ function InventoryForm({ record, onBack, notify }: {
 </div>
         <h2>Origen y control</h2>
         <div className="form-grid">
-          <label>Proveedor<select required value={supplierId} onChange={e => setSupplierId(e.target.value)}>
+          <label>Generador de residuos<select required value={supplierId} onChange={e => setSupplierId(e.target.value)}>
 <option value="">Selecciona</option>{suppliers.filter(x => x.active).map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select>
 </label>
           <label>Persona que entregó<input required value={deliveredBy} onChange={e => setDeliveredBy(e.target.value)}/>
@@ -640,7 +642,7 @@ function Supply({ notify }: {
         setHistoryLoading(false);
     } };
     return <>
-<PageTitle eyebrow="ORIGEN DEL MATERIAL" title="Compras" subtitle="Recolectores y empresas alimentados desde la base de datos." action={<Button size="lg" onClick={() => setEditing(null)}>
+<PageTitle eyebrow="REGISTRO DE GENERADORES DE RESIDUOS" title="Generadores de residuos" subtitle="Registra los generadores de residuos que suministran a la empresa." action={<Button size="lg" onClick={() => setEditing(null)}>
 <Plus />Agregar proveedor</Button>}/>
 <div className="tabs">
 {supplierCategories.filter(c=>c.active||suppliers.some(p=>supplierCategoryId(p)===c.id)).map(c=><button key={c.id} className={tab===c.id?'active':''} onClick={()=>setTab(c.id)}>{c.name}<span>{suppliers.filter(p=>supplierCategoryId(p)===c.id).length}</span></button>)}
@@ -813,7 +815,7 @@ function Clients({ notify }: {
     } };
     const labels = (c: ClientRecord) => [...(c.material_ids ?? []).map(id => materials.find(x => x.id === id)?.name), ...(c.category_ids ?? []).map(id => categories.find(x => x.id === id)?.name)].filter(Boolean).join(' · ') || 'Sin categorías';
     return <>
-<PageTitle eyebrow="RELACIONES COMERCIALES" title="Clientes" subtitle="Registros validados, editables y persistidos en Supabase." action={<Button size="lg" onClick={() => setEditing(null)}>
+<PageTitle eyebrow="REGISTRO DE CLIENTES" title="Clientes" subtitle="Registra a las personas y empresas que compran residuos." action={<Button size="lg" onClick={() => setEditing(null)}>
 <Plus />Agregar cliente</Button>}/>
 <section className="panel">
 <div className="toolbar">
@@ -905,6 +907,7 @@ function SettingsView({ notify }: {
     const [unit, setUnit] = useState<'lb' | 'ton'>(settings?.default_weight_unit ?? 'lb');
     const [fiscalAddress, setFiscalAddress] = useState(settings?.fiscal_address ?? '');
     const [fiscalPhone, setFiscalPhone] = useState(settings?.fiscal_phone ?? '');
+    const [logoError, setLogoError] = useState('');
     const [catalog, setCatalog] = useState<{
         kind: 'material' | 'category';
         item?: MaterialRecord | CategoryRecord;
@@ -914,6 +917,16 @@ function SettingsView({ notify }: {
       if(name.trim().length<2 || !Number.isFinite(rate) || rate<=0 || fiscalAddress.trim().length<4 || fiscalPhone.replace(/\D/g,'').length<8){setError('Ingresa nombre, dirección, teléfono válido y una tasa mayor que cero.');return;}
       try{await saveSettings({name:name.trim(),logo_url:logo||null,default_currency:currency,usd_to_lps_rate:rate,default_weight_unit:unit,fiscal_address:fiscalAddress.trim(),fiscal_phone:fiscalPhone.trim()});setError('');notify({message:'Identidad de la empresa guardada'});}catch(e){setError(e instanceof Error?e.message:'No fue posible guardar');}
     };
+    const handleLogoFile = (file?: File) => {
+      if(!file) return;
+      if(!file.type.startsWith('image/')){setLogoError('Selecciona un archivo de imagen válido.');return;}
+      if(file.size>2*1024*1024){setLogoError('La imagen no puede superar 2 MB.');return;}
+      setLogoError('');
+      const reader=new FileReader();
+      reader.onload=()=>setLogo(String(reader.result??''));
+      reader.onerror=()=>setLogoError('No se pudo leer la imagen.');
+      reader.readAsDataURL(file);
+    };
     return <>
 <PageTitle eyebrow="ADMINISTRACIÓN" title="Configuración" subtitle="Cambios persistentes para empresa, usuarios y catálogo."/>
 <div className="settings-layout">
@@ -922,19 +935,20 @@ function SettingsView({ notify }: {
 <section className="panel settings-content">{tab === 'Agregar usuarios' && <AddUser/>}{tab === 'Categorías de proveedores' && <SupplierCategories/>}{tab === 'Empresa' && <>
 <div className="settings-head">
 <h2>Identidad de la empresa</h2>
-<p>Estos datos se muestran en el menú y se usan como valores predeterminados.</p>
+<p>Estos datos se muestran en boletas, certificados y reportes. La marca de la plataforma permanece como Gavrion EcoSystems.</p>
 </div>
 <div className="logo-editor">{logo ? <img className="company-logo-preview" src={logo} alt="Logo de la empresa"/> : <span className="brand-mark">{name[0]?.toUpperCase() || 'E'}</span>}<div>
 <strong>Logo de la empresa</strong>
-<small>Ingresa una URL pública de imagen.</small>
+<small>Sube una imagen desde tu computadora o usa una URL pública.</small>
+<label className="logo-upload">Seleccionar imagen<input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={e=>handleLogoFile(e.target.files?.[0])}/></label>
 </div>
 </div>
 <div className="form-grid">
 <label>Dirección de la empresa<input value={fiscalAddress} onChange={e=>setFiscalAddress(e.target.value)}/></label>
 <label>Teléfono de la empresa<input type="tel" value={fiscalPhone} onChange={e=>setFiscalPhone(e.target.value)}/></label>
-<label>Nombre de la empresa<input value={name} onChange={e => setName(e.target.value)}/>
+<label>Nombre de la empresa para documentos<input value={name} onChange={e => setName(e.target.value)}/>
 </label>
-<label>URL del logo<input type="url" value={logo} onChange={e => setLogo(e.target.value)} placeholder="https://…"/>
+<label>URL del logo<input type="url" value={logo.startsWith('data:') ? '' : logo} onChange={e => {setLogo(e.target.value);setLogoError('')}} placeholder="https://…"/>
 </label>
 <label>Moneda predeterminada<select value={currency} onChange={e => setCurrency(e.target.value as 'LPS' | 'USD')}>
 <option>LPS</option>
@@ -950,7 +964,7 @@ function SettingsView({ notify }: {
 </select>
 </label>
 </div>
-{error && <div className="form-error">{error}</div>}<div className="settings-save">
+{(error||logoError) && <div className="form-error">{error||logoError}</div>}<div className="settings-save">
 <Button disabled={loading} onClick={() => void saveCompany()}>
 <Check />{loading ? 'Guardando…' : 'Guardar cambios'}</Button>
 </div>
@@ -994,7 +1008,7 @@ function SettingsView({ notify }: {
 </div>
 <div>
 <strong>Empleado</strong>
-<p>Inventarios, abastecimiento y clientes; sin información financiera global.</p>
+<p>Inventarios, generadores de residuos y clientes; sin información financiera global.</p>
 </div>
 </div>
 </>}{tab === 'Códigos' && <CodeSettings/>}{tab === 'Materiales y categorías' && <MaterialCatalog notify={(message,tone)=>notify({message,tone})}/>}</section>
@@ -1009,17 +1023,14 @@ function EconexoApp() {
     const [drawer, setDrawer] = useState(false);
     const [profileOpen, setProfileOpen] = useState(false);
     const [notice, setNotice] = useState<Notice | null>(null);
-    const title = useMemo(() => navItems.find(n => n.id === view)?.label ?? 'Inventarios', [view]);
-    const company = settings?.name ?? 'Gavrion EcoSystems';
+    const title = useMemo(() => navItems.find(n => n.id === view)?.label ?? 'Inventario', [view]);
+    const company = PLATFORM_NAME;
     const notify = (next: Notice) => { setNotice(next); window.setTimeout(() => setNotice(null), 3000); };
     const go = (id: View) => { if (!isAdmin && ['dashboard', 'facturacion', 'certificados', 'reportes', 'configuracion'].includes(id))
         return; setView(id); setDrawer(false); window.scrollTo({ top: 0, behavior: 'smooth' }); };
     const editInventory = (record?: InventoryRecord) => { setEditingInventory(record); go('inventario-form'); };
     const nav = <>
-<div className="brand">{settings?.logo_url ? <img className="brand-logo" src={settings.logo_url} alt="Logo"/> : <span className="brand-mark">{company[0]?.toUpperCase()}</span>}<div>
-<strong>{company}</strong>
-<small>Sistema empresarial</small>
-</div>
+<div className="brand platform-brand"><div className="platform-logo-frame"><img className="platform-logo" src={PLATFORM_LOGO} alt={company}/></div><strong className="platform-brand-name">{company}</strong><small>Sistema empresarial</small>
 </div>
 <nav>{navItems.filter(n => isAdmin || !n.admin).map(({ id, label, icon: Icon }) => <button className={(view === id || (view === 'inventario-form' && id === 'inventarios')) ? 'nav-item active' : 'nav-item'} key={id} onClick={() => go(id)}>
 <Icon />
@@ -1028,8 +1039,8 @@ function EconexoApp() {
 <div className="sidebar-foot">
 <PackageCheck />
 <span>
-<strong>Conectado a Supabase</strong>
-<small>{loading ? 'Sincronizando…' : 'Datos actualizados'}</small>
+<strong>Operación segura</strong>
+<small>{loading ? 'Cargando información…' : 'Sistema listo'}</small>
 </span>
 </div>
 </>;
@@ -1042,8 +1053,7 @@ function EconexoApp() {
 <Menu />
 </Button>
 <div className="mobile-brand">
-<span className="brand-mark">{company[0]?.toUpperCase()}</span>
-<strong>{company}</strong>
+<div className="platform-logo-mobile-frame"><img className="platform-logo-mobile" src={PLATFORM_LOGO} alt={company}/></div>
 </div>
 <span className="breadcrumb">Sistema / <strong>{title}</strong>
 </span>
@@ -1071,7 +1081,7 @@ function EconexoApp() {
 <span>{error}</span>
 <button onClick={() => void refresh()}>Reintentar</button>
 </div>}{view === 'dashboard' && isAdmin && <BusinessDashboard />}{view === 'inventarios' && <Inventory onEdit={editInventory} notify={notify}/>} {view === 'facturacion' && isAdmin && <WeightTickets notify={(message, tone) => notify({ message, tone })}/>} {view === 'inventario-form' && <InventoryForm record={editingInventory} onBack={() => go('inventarios')} notify={notify}/>} {view === 'abastecimiento' && <Supply notify={notify}/>} {view === 'clientes' && <Clients notify={notify}/>} {view === 'certificados' && isAdmin && <Certificates/>} {view === 'reportes' && isAdmin && <FinancialReports notify={(message,tone)=>notify({message,tone})}/>} {view === 'configuracion' && isAdmin && <SettingsView notify={notify}/>}</div>
-</section>{notice && <div className={`toast ${notice.tone === 'error' ? 'toast-error' : ''}`}>
+</section><footer className="site-footer">Derechos reservados · Gavrion EcoSystems</footer>{notice && <div className={`toast ${notice.tone === 'error' ? 'toast-error' : ''}`}>
 <span>{notice.tone === 'error' ? <X /> : <Check />}</span>{notice.message}</div>}</main>;
 }
 export default function Home() { return <EconexoDataProvider>

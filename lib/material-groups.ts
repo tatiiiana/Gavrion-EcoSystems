@@ -1,13 +1,18 @@
 export type MaterialGroup = {id:string;name:string;active:boolean};
 export const defaultMaterialGroups:MaterialGroup[] = [
-  {id:'ferrous',name:'Ferrosos',active:true}, {id:'non-ferrous',name:'No ferrosos',active:true},
+  {id:'ferrous',name:'Ferroso',active:true}, {id:'non-ferrous',name:'No Ferroso',active:true},
   {id:'plastic',name:'Plástico',active:true}, {id:'paper',name:'Papel',active:true},
-  {id:'cardboard',name:'Cartón',active:true}, {id:'raee',name:'RAEE',active:true},
+  {id:'cardboard',name:'Cartón',active:true}, {id:'raee',name:'RAEE',active:true}, {id:'glass',name:'Vidrio',active:true},
 ];
 export const defaultMaterialTypes = [
   {id:'mat-wrought-iron',name:'Hierro forjado',group_id:'ferrous'},
   {id:'mat-steel',name:'Acero',group_id:'ferrous'},
   ...['Aluminio','Cobre','Zinc','Estaño','Magnesio'].map((name,i)=>({id:`mat-non-ferrous-${i}`,name,group_id:'non-ferrous'})),
+  {id:'mat-paper',name:'Papel',group_id:'paper'},
+  {id:'mat-pet-clear',name:'Pet Claro',group_id:'plastic'},
+  {id:'mat-pet-green',name:'Pet Verde',group_id:'plastic'},
+  {id:'mat-batteries',name:'Baterías',group_id:'raee'},
+  {id:'mat-glass',name:'Vidrio',group_id:'glass'},
 ];
 export function materialGroupId(material:{name:string;group_id?:string|null}) {
   if(material.group_id)return material.group_id;
@@ -18,6 +23,7 @@ export function materialGroupId(material:{name:string;group_id?:string|null}) {
   if(name.includes('papel'))return 'paper';
   if(name.includes('plást'))return 'plastic';
   if(name.includes('raee'))return 'raee';
+  if(name.includes('vidri'))return 'glass';
   return '';
 }
 export const weightUnitLabel = (unit:unknown) => unit==='ton'?'toneladas':String(unit??'');
